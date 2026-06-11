@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import AuthForm from "@/components/AuthForm";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, safeNextPath } from "@/lib/auth";
 
 export default async function LoginPage({
   searchParams,
@@ -9,8 +9,10 @@ export default async function LoginPage({
   searchParams: Promise<{ next?: string; error?: string }>;
 }) {
   const { next, error } = await searchParams;
+  // `next` is attacker-controllable — guard against open redirect.
+  const safe = safeNextPath(next);
   // Already signed in → straight to the dashboard.
-  if (await getCurrentUser()) redirect(next ?? "/dashboard");
+  if (await getCurrentUser()) redirect(safe);
 
   return (
     <main className="bg-dreamy flex min-h-screen items-center justify-center px-5 py-16 sm:px-8">
@@ -31,7 +33,7 @@ export default async function LoginPage({
         </p>
       )}
 
-        <AuthForm next={next ?? "/dashboard"} />
+        <AuthForm next={safe} />
 
         <p className="mt-6 text-xs text-ink-500">
           <Link href="/" className="underline underline-offset-4 hover:text-signal-600">

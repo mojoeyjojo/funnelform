@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { ensureProfile } from "@/lib/auth";
+import { ensureProfile, safeNextPath } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -10,16 +10,17 @@ export const runtime = "nodejs";
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
-  const next = searchParams.get("next") ?? "/dashboard";
+  // `next` is attacker-controllable — validate it's strictly local before use.
+  const safeNext = safeNextPath(searchParams.get("next"));
 
   if (code) {
     const supabase = await createSupabaseServerClient();
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
       await ensureProfile(supabase);
-      return NextResponse.redirect(`${origin}${next}`);
+      return NextResponse.redirect(new URL(safeNext, origin));
     }
   }
 
-  return NextResponse.redirect(`${origin}/login?error=auth`);
+  return NextResponse.redirect(new URL("/login?error=auth", origin));
 }

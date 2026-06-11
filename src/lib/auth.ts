@@ -21,6 +21,17 @@ const VALID_SOURCES = new Set([
   "other",
 ]);
 
+// Open-redirect guard for the post-auth `next` param (attacker-controllable via
+// the callback/login URL). Only allow strictly-local paths: a single leading
+// slash, never protocol-relative (`//…`) or backslash tricks (`/\…`), so it can
+// never bounce the user off-site (e.g. `@evil.com`, `https://evil.com`). Always
+// resolve with `new URL(path, origin)` at the call site, never string concat.
+export function safeNextPath(next: string | null | undefined): string {
+  if (!next || !next.startsWith("/")) return "/dashboard";
+  if (next.startsWith("//") || next.startsWith("/\\")) return "/dashboard";
+  return next;
+}
+
 /** The verified current user, or null. Use this (not getSession) for auth. */
 export async function getCurrentUser(): Promise<User | null> {
   const supabase = await createSupabaseServerClient();
