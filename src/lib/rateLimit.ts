@@ -12,6 +12,9 @@ import { createSupabaseAdminClient } from "./supabase/server";
 const WINDOW_SECONDS = 24 * 60 * 60;
 export const ANON_GENERATIONS_PER_DAY = 3;
 export const USER_GENERATIONS_PER_DAY = 20;
+// Free tool (spec §5.10): exactly 1 anonymous generation per IP per 24h, in a
+// SEPARATE bucket from the landing endpoint. No regeneration.
+export const FREE_TOOL_GENERATIONS_PER_DAY = 1;
 
 export type RateLimitResult = {
   allowed: boolean;
@@ -59,5 +62,27 @@ export async function consumeGenerateLimit(args: {
       err instanceof Error ? err.message : err,
     );
     return { allowed: true, scope, limit };
+  }
+}
+
+// Free-tool limiter: 1 generation per IP per 24h, separate bucket. Fails open.
+export async function consumeFreeToolLimit(headers: Headers): Promise<boolean> {
+  const key = `freetool:ip:${hashIp(clientIpFromHeaders(headers))}`;
+  try {
+    const admin = createSupabaseAdminClient();
+    const { data, error } = await admin.rpc("consume_rate_limit", {
+      p_key: key,
+      p_window_seconds: WINDOW_SECONDS,
+      p_max: FREE_TOOL_GENERATIONS_PER_DAY,
+    });
+    if (error) {
+      console.error("[rate-limit] free-tool rpc failed (failing open):", error.message);
+      return true;
+    }
+    const row = Array.isArray(data) ? data[0] : data;
+    return Boolean(row?.allowed ?? true);
+  } catch (err) {
+    console.warn("[rate-limit] free-tool unavailable (failing open):", err instanceof Error ? err.message : err);
+    return true;
   }
 }

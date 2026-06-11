@@ -3,20 +3,21 @@
 import type { GeneratedQuiz } from "@/lib/schema";
 import type { OutputRating } from "@/lib/types";
 
-// Shared editable quiz view, used by both the generate flow (with the one-tap
-// rating) and the saved-quiz editor (no rating). `onEdit` receives a field path
-// and a mutator over an immutable draft; the host decides what to do with it
-// (local state in the generator, debounced PATCH in the editor).
+// Shared quiz view, used by the generate flow (with the one-tap rating), the
+// saved-quiz editor (no rating), and the free-tool preview (`readOnly`). When
+// readOnly, fields render as plain text instead of editable inputs.
 export function QuizView({
   quiz,
   rating,
   onRate,
   onEdit,
+  readOnly = false,
 }: {
   quiz: GeneratedQuiz;
   rating?: OutputRating | null;
   onRate?: (r: OutputRating) => void;
   onEdit: (path: string, mutate: (draft: GeneratedQuiz) => void) => void;
+  readOnly?: boolean;
 }) {
   const { config } = quiz;
   return (
@@ -30,6 +31,7 @@ export function QuizView({
           value={quiz.title}
           onChange={(v) => onEdit("title", (d) => (d.title = v))}
           className="text-2xl font-extrabold tracking-tight"
+          readOnly={readOnly}
         />
         <p className="mt-1 px-2 font-mono text-[11px] text-[var(--muted)]">
           type: {config.type} · schema_version {config.schema_version}
@@ -45,6 +47,7 @@ export function QuizView({
               value={q.text}
               onChange={(v) => onEdit(`questions.${qi}.text`, (d) => (d.config.questions[qi].text = v))}
               className="font-semibold"
+              readOnly={readOnly}
             />
             <div className="mt-2 space-y-1">
               {q.options.map((o, oi) => (
@@ -56,6 +59,7 @@ export function QuizView({
                       onEdit(`questions.${qi}.options.${oi}.label`, (d) => (d.config.questions[qi].options[oi].label = v))
                     }
                     className="text-sm"
+                    readOnly={readOnly}
                   />
                   <span className="shrink-0 font-mono text-[10px] text-[var(--muted)]">[{o.tags.join(", ")}]</span>
                 </div>
@@ -74,6 +78,7 @@ export function QuizView({
               value={out.name}
               onChange={(v) => onEdit(`outcomes.${oi}.name`, (d) => (d.config.outcomes[oi].name = v))}
               className="text-lg font-bold"
+              readOnly={readOnly}
             />
             <p className="px-2 font-mono text-[10px] text-[var(--muted)]">
               match: {out.match_logic.primary_tag} ≥ {out.match_logic.min_score}
@@ -83,22 +88,25 @@ export function QuizView({
               onChange={(v) => onEdit(`outcomes.${oi}.description`, (d) => (d.config.outcomes[oi].description = v))}
               className="mt-1 text-sm"
               multiline
+              readOnly={readOnly}
             />
             <p className="mt-2 px-2 text-xs font-semibold text-[var(--muted)]">Recommends:</p>
             <div className="px-2 text-sm">{out.recommendations.join(" · ")}</div>
-            <div className="mt-2 flex flex-col gap-1 sm:flex-row sm:items-center">
-              <EditInput
-                value={out.cta.label}
-                onChange={(v) => onEdit(`outcomes.${oi}.cta.label`, (d) => (d.config.outcomes[oi].cta.label = v))}
-                className="text-sm font-semibold"
-              />
-              <EditInput
-                value={out.cta.url}
-                onChange={(v) => onEdit(`outcomes.${oi}.cta.url`, (d) => (d.config.outcomes[oi].cta.url = v))}
-                className="text-xs text-[var(--muted)]"
-              />
-            </div>
-            {!out.cta.url && (
+            {!readOnly && (
+              <div className="mt-2 flex flex-col gap-1 sm:flex-row sm:items-center">
+                <EditInput
+                  value={out.cta.label}
+                  onChange={(v) => onEdit(`outcomes.${oi}.cta.label`, (d) => (d.config.outcomes[oi].cta.label = v))}
+                  className="text-sm font-semibold"
+                />
+                <EditInput
+                  value={out.cta.url}
+                  onChange={(v) => onEdit(`outcomes.${oi}.cta.url`, (d) => (d.config.outcomes[oi].cta.url = v))}
+                  className="text-xs text-[var(--muted)]"
+                />
+              </div>
+            )}
+            {!readOnly && !out.cta.url && (
               <p className="px-2 text-[11px] text-amber-600">Add where this button should send people.</p>
             )}
           </div>
@@ -159,12 +167,19 @@ export function EditInput({
   onChange,
   className = "",
   multiline = false,
+  readOnly = false,
 }: {
   value: string;
   onChange: (v: string) => void;
   className?: string;
   multiline?: boolean;
+  readOnly?: boolean;
 }) {
+  if (readOnly) {
+    return (
+      <div className={`px-2 py-1 ${multiline ? "whitespace-pre-wrap " : ""}${className}`}>{value}</div>
+    );
+  }
   const base =
     "w-full rounded-lg border border-transparent bg-transparent px-2 py-1 outline-none hover:border-[var(--hairline)] focus:border-[var(--signal)]";
   return multiline ? (
