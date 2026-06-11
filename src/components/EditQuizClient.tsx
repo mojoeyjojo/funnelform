@@ -16,14 +16,17 @@ export default function EditQuizClient({
   initialConfig,
   initialStatus,
   initialSlug,
+  initialWhatsapp,
 }: {
   id: string;
   initialTitle: string;
   initialConfig: QuizConfig;
   initialStatus: string;
   initialSlug: string | null;
+  initialWhatsapp: string;
 }) {
   const [quiz, setQuiz] = useState<GeneratedQuiz>({ title: initialTitle, config: initialConfig });
+  const [whatsapp, setWhatsapp] = useState(initialWhatsapp);
   const [state, setState] = useState<SaveState>("clean");
   const [publishState, setPublishState] = useState<PublishState>(
     initialStatus === "published" ? "published" : "idle",
@@ -40,13 +43,18 @@ export default function EditQuizClient({
     setState("dirty");
   }
 
+  function editWhatsapp(value: string) {
+    setWhatsapp(value);
+    setState("dirty");
+  }
+
   async function save(): Promise<boolean> {
     setState("saving");
     try {
       const res = await fetch(`/api/quizzes/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: quiz.title, config: quiz.config }),
+        body: JSON.stringify({ title: quiz.title, config: quiz.config, whatsapp }),
       });
       setState(res.ok ? "saved" : "error");
       return res.ok;
@@ -150,6 +158,23 @@ export default function EditQuizClient({
           Couldn’t publish just now. Please try again.
         </p>
       )}
+
+      {/* WhatsApp delivery — adds a "Continue on WhatsApp" button to results
+          (build spec §5.6, the EU/LATAM wedge). Optional, per quiz. */}
+      <div className="mb-8 rounded-2xl border border-[var(--hairline)] p-4">
+        <p className="text-sm font-semibold">WhatsApp delivery (optional)</p>
+        <p className="mt-1 text-xs text-[var(--muted)]">
+          Add your WhatsApp number and the results page shows a “Continue on WhatsApp”
+          button, prefilled with the visitor’s result. Use international format.
+        </p>
+        <input
+          type="tel"
+          value={whatsapp}
+          onChange={(e) => editWhatsapp(e.target.value)}
+          placeholder="+31 6 12345678"
+          className="mt-3 w-full max-w-xs rounded-full border border-[var(--hairline)] px-4 py-2.5 text-sm outline-none focus:border-[var(--signal)]"
+        />
+      </div>
 
       <QuizView quiz={quiz} onEdit={editField} />
     </main>

@@ -5,17 +5,20 @@ import { QuizConfigSchema } from "@/lib/schema";
 
 export const runtime = "nodejs";
 
-// Editor persistence: PATCH a draft's title and/or config. Both are re-validated
-// (config against the versioned quiz_config contract) before the write. RLS
+// Editor persistence: PATCH a draft's title, config, and/or WhatsApp delivery
+// number. config is re-validated against the versioned quiz_config contract.
+// `whatsapp` is stored in the `delivery` jsonb (empty string clears it). RLS
 // guarantees a user can only update their own rows.
 const UpdateQuizSchema = z
   .object({
     title: z.string().min(1).optional(),
     config: QuizConfigSchema.optional(),
+    whatsapp: z.string().max(32).optional(),
   })
-  .refine((v) => v.title !== undefined || v.config !== undefined, {
-    message: "Nothing to update",
-  });
+  .refine(
+    (v) => v.title !== undefined || v.config !== undefined || v.whatsapp !== undefined,
+    { message: "Nothing to update" },
+  );
 
 export async function PATCH(
   request: Request,
@@ -45,9 +48,19 @@ export async function PATCH(
     );
   }
 
+  // Build the column update explicitly — `whatsapp` maps into the delivery jsonb,
+  // it is not its own column, so it must not be spread in.
+  const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (parsed.data.title !== undefined) update.title = parsed.data.title;
+  if (parsed.data.config !== undefined) update.config = parsed.data.config;
+  if (parsed.data.whatsapp !== undefined) {
+    const w = parsed.data.whatsapp.trim();
+    update.delivery = w ? { whatsapp: w } : {};
+  }
+
   const { data, error } = await supabase
     .from("quizzes")
-    .update({ ...parsed.data, updated_at: new Date().toISOString() })
+    .update(update)
     .eq("id", id)
     .select("id, title, status, updated_at")
     .single();
@@ -75,7 +88,7 @@ export async function GET(
 
   const { data, error } = await supabase
     .from("quizzes")
-    .select("id, title, status, slug, config, source_url, created_at, updated_at")
+    .select("id, title, status, slug, config, source_url, delivery, created_at, updated_at")
     .eq("id", id)
     .maybeSingle();
 

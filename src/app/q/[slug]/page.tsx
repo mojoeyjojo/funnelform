@@ -18,7 +18,7 @@ export default async function PlayerPage({
   const admin = createSupabaseAdminClient();
   const { data: quiz } = await admin
     .from("quizzes")
-    .select("id, title, config, branding_enabled, lead_capture, status")
+    .select("id, title, config, branding_enabled, lead_capture, delivery, status")
     .eq("slug", slug)
     .eq("status", "published")
     .maybeSingle();
@@ -34,6 +34,9 @@ export default async function PlayerPage({
       ? "after_results"
       : "before_results";
 
+  const whatsapp =
+    (quiz.delivery as { whatsapp?: string } | null)?.whatsapp ?? null;
+
   return (
     <QuizPlayer
       quizId={quiz.id}
@@ -41,6 +44,7 @@ export default async function PlayerPage({
       config={parsed.data}
       branding={quiz.branding_enabled !== false}
       placement={placement}
+      whatsapp={whatsapp}
     />
   );
 }

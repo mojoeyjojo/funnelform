@@ -19,7 +19,7 @@ export default async function EditPage({
 
   const { data } = await supabase
     .from("quizzes")
-    .select("id, title, config, status, slug")
+    .select("id, title, config, status, slug, delivery")
     .eq("id", id)
     .maybeSingle();
 
@@ -42,6 +42,9 @@ export default async function EditPage({
     );
   }
 
+  const initialWhatsapp =
+    (data.delivery as { whatsapp?: string } | null)?.whatsapp ?? "";
+
   return (
     <EditQuizClient
       id={data.id}
@@ -49,6 +52,7 @@ export default async function EditPage({
       initialConfig={parsed.data}
       initialStatus={data.status ?? "draft"}
       initialSlug={data.slug ?? null}
+      initialWhatsapp={initialWhatsapp}
     />
   );
 }
