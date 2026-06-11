@@ -1,0 +1,252 @@
+@import "tailwindcss";
+
+/* =============================================================================
+   Funnelform design system — from STYLE.md ("luminous twilight").
+   Tailwind v4 CSS-first tokens. Marketing surfaces wear the full treatment;
+   app surfaces a lighter touch; the public player stays owner-neutral (§6a).
+   ========================================================================== */
+
+@theme {
+  /* Ink scale — structure + text */
+  --color-ink-950: #0a0f2e;
+  --color-ink-900: #0d1540;
+  --color-ink-800: #151e53;
+  --color-ink-700: #1f2b6b;
+  --color-ink-600: #2e3a8a;
+  --color-ink-500: #4750b4;
+  --color-ink-400: #6a72d6;
+  --color-ink-300: #9099ec;
+  --color-ink-200: #c5cbff;
+  --color-ink-100: #e4e7ff;
+  --color-ink-50: #f3f4ff;
+
+  /* Signal — the single action color */
+  --color-signal-600: #3834ff;
+  --color-signal-500: #4f4bff;
+  --color-signal-400: #716fff;
+
+  /* Twilight gradient accents */
+  --color-twilight-deep: #1a0e4d;
+  --color-twilight-mid: #5d2fa0;
+  --color-twilight-rose: #f4a1c1;
+  --color-twilight-peach: #ffd3b3;
+  --color-twilight-sky: #b6d6ff;
+  --color-twilight-aqua: #9ef1e0;
+
+  /* Neon accents (sparingly) */
+  --color-neon-magenta: #ff3ca5;
+  --color-neon-orange: #ff7a29;
+  --color-neon-teal: #1ec4b2;
+
+  /* Soft surfaces */
+  --color-pearl: #fafaf7;
+  --color-paper: #f5f3ee;
+  --color-mist: #eeecef;
+
+  /* Type — Geist family only (no serif, no editorial accent) */
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  /* Radii */
+  --radius-card: 22px;
+
+  /* Indigo-tinted shadows — never neutral gray */
+  --shadow-soft: 0 20px 50px -20px rgba(14, 21, 64, 0.18);
+  --shadow-float:
+    0 40px 80px -30px rgba(14, 21, 64, 0.25),
+    0 10px 30px -15px rgba(14, 21, 64, 0.12);
+  --shadow-pill: 0 10px 30px -10px rgba(10, 15, 46, 0.5);
+
+  /* Motion */
+  --animate-float-slow: float-slow 6s ease-in-out infinite;
+  --animate-float-slower: float-slower 9s ease-in-out infinite;
+  --animate-pulse-soft: pulse-soft 3s ease-in-out infinite;
+
+  @keyframes float-slow {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-10px);
+    }
+  }
+  @keyframes float-slower {
+    0%,
+    100% {
+      transform: translateY(0) rotate(0deg);
+    }
+    50% {
+      transform: translateY(-18px) rotate(-1.5deg);
+    }
+  }
+  @keyframes pulse-soft {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.85;
+    }
+  }
+}
+
+/* Legacy vars — pre-design-pass components reference these; keep them mapped
+   onto the token system so everything stays consistent. */
+:root {
+  --background: #ffffff;
+  --foreground: var(--color-ink-950);
+  --signal: var(--color-signal-600);
+  --muted: var(--color-ink-500);
+  --hairline: var(--color-ink-200);
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--color-pearl);
+  color: var(--color-ink-950);
+  font-family: var(--font-sans);
+  font-feature-settings: "ss01", "cv11";
+  letter-spacing: -0.01em;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--color-signal-500);
+  color: #fff;
+}
+
+/* ---------------------------------------------------------------------------
+   Glass — the core surface language (frosted, with the inset top highlight).
+   ------------------------------------------------------------------------- */
+@utility glass {
+  background: linear-gradient(
+    140deg,
+    rgba(255, 255, 255, 0.82),
+    rgba(255, 255, 255, 0.55) 50%,
+    rgba(255, 255, 255, 0.7)
+  );
+  backdrop-filter: blur(24px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow:
+    0 30px 60px -30px rgba(20, 26, 82, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+/* glass-lift — same frosted surface as `glass`, but with a grounded drop shadow
+   that reads clearly even on a SHORT element (a near layer sits right under the
+   edge). Used on the hero inputs so the URL pill and the textarea match. */
+@utility glass-lift {
+  background: linear-gradient(
+    140deg,
+    rgba(255, 255, 255, 0.82),
+    rgba(255, 255, 255, 0.55) 50%,
+    rgba(255, 255, 255, 0.7)
+  );
+  backdrop-filter: blur(24px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow:
+    0 24px 48px -24px rgba(14, 21, 64, 0.3),
+    0 8px 20px -8px rgba(14, 21, 64, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+@utility glass-strong {
+  background: linear-gradient(
+    140deg,
+    rgba(255, 255, 255, 0.96),
+    rgba(255, 255, 255, 0.88) 50%,
+    rgba(255, 255, 255, 0.94)
+  );
+  backdrop-filter: blur(20px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  box-shadow:
+    0 30px 60px -30px rgba(20, 26, 82, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+@utility glass-dark {
+  background: linear-gradient(
+    140deg,
+    rgba(26, 14, 77, 0.55),
+    rgba(26, 14, 77, 0.45)
+  );
+  backdrop-filter: blur(24px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow:
+    0 30px 60px -30px rgba(5, 5, 20, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* Twilight sky — radial dawn (hero background) */
+@utility bg-twilight-sky {
+  background: radial-gradient(
+    120% 80% at 50% 0%,
+    #1a0e4d 0%,
+    #3a1a7a 25%,
+    #8b4aa8 55%,
+    #f4a1c1 82%,
+    #ffd3b3 100%
+  );
+}
+
+/* Daylight sky base gradient — the landing hero background (pre-sunset sky).
+   Sun bloom, mint rise, and the SVG ellipse-cluster clouds are layered on top
+   in the component (see <HeroSky/> in Generator). Pair the layer wrapper with
+   `mask-fade-y` so the sky feathers into the page at both edges. */
+@utility bg-daylight-sky {
+  background: linear-gradient(
+    180deg,
+    #cfe5ff 0%,
+    #dff0ff 24%,
+    #f1f7ff 50%,
+    #fff3e3 76%,
+    #ffe2c2 90%,
+    #ffd6a6 100%
+  );
+}
+
+/* Feather a background layer into the page at top and bottom (§8 masking). */
+@utility mask-fade-y {
+  mask-image: linear-gradient(180deg, transparent 0%, #000 12%, #000 88%, transparent 100%);
+  -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 12%, #000 88%, transparent 100%);
+}
+
+/* Dreamy — soft aurora cloud blobs over warm white */
+@utility bg-dreamy {
+  background:
+    radial-gradient(60% 50% at 20% 10%, rgba(246, 180, 210, 0.6), transparent 70%),
+    radial-gradient(45% 40% at 85% 20%, rgba(182, 214, 255, 0.55), transparent 70%),
+    radial-gradient(70% 60% at 50% 110%, rgba(158, 241, 224, 0.5), transparent 70%),
+    linear-gradient(180deg, #fbf8ff 0%, #fef0ea 100%);
+}
+
+/* Luminous hero text — white gradient fill + soft glow */
+@utility text-luminous {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.98) 0%,
+    rgba(255, 255, 255, 0.82) 55%,
+    rgba(255, 255, 255, 0.95) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 24px rgba(255, 255, 255, 0.2));
+}
+
+/* Reduced motion — collapse everything */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
