@@ -41,6 +41,7 @@ export async function POST(req: Request) {
     return new Response(
       JSON.stringify({
         type: "error",
+        code: "rate_limited",
         message: "You've used your free quiz. Create a free account to generate more.",
       }) + "\n",
       { status: 429, headers: NDJSON_HEADERS },

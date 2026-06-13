@@ -10,11 +10,18 @@ import { createSupabaseAdminClient } from "./supabase/server";
 // allow the request. A limiter outage must never block real users.
 
 const WINDOW_SECONDS = 24 * 60 * 60;
+// Three free tastes per IP per day, each shown behind the transparent signup
+// overlay (seeing the built quiz IS the enticement); the fourth attempt
+// funnels into signup before generating.
 export const ANON_GENERATIONS_PER_DAY = 3;
 export const USER_GENERATIONS_PER_DAY = 20;
 // Free tool (spec §5.10): exactly 1 anonymous generation per IP per 24h, in a
 // SEPARATE bucket from the landing endpoint. No regeneration.
 export const FREE_TOOL_GENERATIONS_PER_DAY = 1;
+// Pre-generation site extraction (Flow A display). Cheap Haiku + Jina, so this
+// is purely an abuse ceiling, NOT the signup wall — that stays on /api/generate.
+// Generous enough that a real user re-trying a few URLs never trips it.
+export const EXTRACT_REQUESTS_PER_DAY = 12;
 
 export type RateLimitResult = {
   allowed: boolean;
@@ -62,6 +69,32 @@ export async function consumeGenerateLimit(args: {
       err instanceof Error ? err.message : err,
     );
     return { allowed: true, scope, limit };
+  }
+}
+
+// Extraction limiter: a light per-IP ceiling for the pre-generation site
+// extraction. Separate bucket; fails open. Never funnels to signup.
+export async function consumeExtractLimit(headers: Headers): Promise<boolean> {
+  const key = `extract:ip:${hashIp(clientIpFromHeaders(headers))}`;
+  try {
+    const admin = createSupabaseAdminClient();
+    const { data, error } = await admin.rpc("consume_rate_limit", {
+      p_key: key,
+      p_window_seconds: WINDOW_SECONDS,
+      p_max: EXTRACT_REQUESTS_PER_DAY,
+    });
+    if (error) {
+      console.error("[rate-limit] extract rpc failed (failing open):", error.message);
+      return true;
+    }
+    const row = Array.isArray(data) ? data[0] : data;
+    return Boolean(row?.allowed ?? true);
+  } catch (err) {
+    console.warn(
+      "[rate-limit] extract unavailable (failing open):",
+      err instanceof Error ? err.message : err,
+    );
+    return true;
   }
 }
 

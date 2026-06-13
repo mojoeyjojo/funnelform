@@ -24,7 +24,10 @@ export default async function LeadsPage({
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect(`/login?next=/leads/${id}`);
+  // Lead data is for verified accounts ONLY. Guests are redirected before any
+  // lead row renders (not even behind an overlay); /login doubles as their
+  // conversion flow and brings them back here.
+  if (!user || user.is_anonymous) redirect(`/login?next=/leads/${id}`);
 
   const { data: quiz } = await supabase
     .from("quizzes")
@@ -46,7 +49,7 @@ export default async function LeadsPage({
           href="/dashboard"
           className="text-xs font-semibold text-[var(--muted)] underline underline-offset-4 hover:text-[var(--signal)]"
         >
-          ← Dashboard
+          ← Workspace
         </Link>
         <h1 className="mt-2 text-2xl font-extrabold tracking-tight">
           Leads: {quiz?.title ?? "quiz"}

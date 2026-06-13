@@ -3,8 +3,6 @@ import { cookies } from "next/headers";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { createSupabaseServerClient } from "./supabase/server";
 
-const TRIAL_DAYS = 14;
-
 // Cookie that carries acquisition attribution across the OAuth/magic-link
 // round-trip (Claim 5 instrumentation). Set client-side from UTM/referrer
 // before auth; read here in the callback to stamp the profile. Fails silently
@@ -46,6 +44,12 @@ export async function getCurrentUser(): Promise<User | null> {
  * app-level (not a DB trigger) precisely because the attribution cookie is only
  * readable here — a trigger on auth.users couldn't see it (Claim 5).
  *
+ * Called from BOTH the auth callback (OAuth/magic-link round-trip) and the
+ * first quiz save (guest sessions via signInAnonymously never hit the
+ * callback). Idempotent. For guests, email is null; when a guest converts to a
+ * permanent account (updateUser/linkIdentity), the same user id gains an email,
+ * so we backfill it onto the existing profile row here.
+ *
  * CRITICAL: id is set to auth.uid() explicitly, overriding the table's
  * gen_random_uuid() default. RLS is `auth.uid() = id` and quizzes.owner_id FKs
  * to profiles.id under `auth.uid() = owner_id`; letting id default would
@@ -59,23 +63,31 @@ export async function ensureProfile(supabase: SupabaseClient): Promise<void> {
 
   const { data: existing } = await supabase
     .from("profiles")
-    .select("id")
+    .select("id, email")
     .eq("id", user.id)
     .maybeSingle();
-  if (existing) return;
+  if (existing) {
+    // Guest → permanent conversion: same profile row, now with an email.
+    if (!existing.email && user.email) {
+      await supabase
+        .from("profiles")
+        .update({ email: user.email, updated_at: new Date().toISOString() })
+        .eq("id", user.id);
+    }
+    return;
+  }
 
   const cookieStore = await cookies();
   const raw = cookieStore.get(SIGNUP_SOURCE_COOKIE)?.value ?? "direct";
   const signupSource = VALID_SOURCES.has(raw) ? raw : "other";
-  const trialEndsAt = new Date(
-    Date.now() + TRIAL_DAYS * 24 * 60 * 60 * 1000,
-  ).toISOString();
 
+  // Everyone starts on the free floor. Pro trials are opt-in and live in
+  // Stripe (card-upfront trial on the subscription itself), not here — the
+  // webhook flips the plan when a trial/subscription starts.
   const { error } = await supabase.from("profiles").insert({
     id: user.id, // MUST equal auth.uid() — not the table default
     email: user.email,
-    plan: "trial",
-    trial_ends_at: trialEndsAt,
+    plan: "free",
     signup_source: signupSource,
   });
   if (error) {

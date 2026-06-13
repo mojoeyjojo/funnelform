@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { ensureProfile } from "@/lib/auth";
 import { GeneratedQuizSchema } from "@/lib/schema";
 
 export const runtime = "nodejs";
@@ -36,6 +37,11 @@ export async function POST(request: Request) {
       { status: 422 },
     );
   }
+
+  // Guest sessions (signInAnonymously) never pass through the auth callback,
+  // so the profile row (quizzes.owner_id FK target) is created here on first
+  // save. Idempotent for everyone else.
+  await ensureProfile(supabase);
 
   const { title, config, source_url, business_context } = parsed.data;
   const { data, error } = await supabase

@@ -23,13 +23,15 @@ export async function POST(req: Request) {
   const sessionId = (body.sessionId ?? "").trim() || "anon";
 
   // --- Rate limit BEFORE any AI work (cost/abuse protection, spec §8). ------
+  // Guest sessions (is_anonymous) stay on the tighter per-IP bucket: anonymous
+  // users are free to mint, so a per-account cap for them would be a bypass.
   let userId: string | null = null;
   try {
     const supabase = await createSupabaseServerClient();
     const {
       data: { user },
     } = await supabase.auth.getUser();
-    userId = user?.id ?? null;
+    userId = user && !user.is_anonymous ? user.id : null;
   } catch {
     // no session resolvable; treat as anonymous
   }
@@ -42,12 +44,12 @@ export async function POST(req: Request) {
     });
     const message =
       rate.scope === "anon"
-        ? "You've used today's free generations. Create a free account for more, or come back tomorrow."
+        ? "You've used today's free generations. Create a free account for more."
         : "You've hit today's generation limit. It resets within 24 hours.";
-    return new Response(JSON.stringify({ type: "error", message }) + "\n", {
-      status: 429,
-      headers: NDJSON_HEADERS,
-    });
+    return new Response(
+      JSON.stringify({ type: "error", code: "rate_limited", message }) + "\n",
+      { status: 429, headers: NDJSON_HEADERS },
+    );
   }
 
   return new Response(createGenerateStream({ body, sessionId }), { headers: NDJSON_HEADERS });

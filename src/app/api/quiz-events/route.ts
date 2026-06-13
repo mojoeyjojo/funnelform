@@ -11,6 +11,8 @@ const EventSchema = z.object({
   event_type: z.enum(["view", "start", "question_answered", "completed"]),
   question_id: z.string().optional(),
   session_id: z.string().min(1).max(100),
+  // Which outcome a finisher landed on (sent with `completed` — §5.8 analytics).
+  outcome_id: z.string().max(100).optional(),
 });
 
 export async function POST(request: Request) {
@@ -32,6 +34,7 @@ export async function POST(request: Request) {
       event_type: parsed.data.event_type,
       question_id: parsed.data.question_id ?? null,
       session_id: parsed.data.session_id,
+      outcome_id: parsed.data.outcome_id ?? null,
     });
   } catch (err) {
     console.error("[quiz-events] insert failed:", err instanceof Error ? err.message : err);

@@ -2,21 +2,29 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { QuizConfigSchema } from "@/lib/schema";
+import { effectivePlan, fetchPlanProfile, hasProFeatures } from "@/lib/plan";
 
 export const runtime = "nodejs";
 
-// Editor persistence: PATCH a draft's title, config, and/or WhatsApp delivery
-// number. config is re-validated against the versioned quiz_config contract.
-// `whatsapp` is stored in the `delivery` jsonb (empty string clears it). RLS
-// guarantees a user can only update their own rows.
+// Editor persistence: PATCH a draft's title, config, WhatsApp delivery number,
+// and/or the branding toggle. config is re-validated against the versioned
+// quiz_config contract. `whatsapp` is stored in the `delivery` jsonb (empty
+// string clears it). `branding_enabled: false` is a Pro feature (§5.9) — and
+// the player enforces the watermark server-side regardless, so this gate is
+// UX, not security. RLS guarantees a user can only update their own rows.
 const UpdateQuizSchema = z
   .object({
     title: z.string().min(1).optional(),
     config: QuizConfigSchema.optional(),
     whatsapp: z.string().max(32).optional(),
+    branding_enabled: z.boolean().optional(),
   })
   .refine(
-    (v) => v.title !== undefined || v.config !== undefined || v.whatsapp !== undefined,
+    (v) =>
+      v.title !== undefined ||
+      v.config !== undefined ||
+      v.whatsapp !== undefined ||
+      v.branding_enabled !== undefined,
     { message: "Nothing to update" },
   );
 
@@ -48,11 +56,32 @@ export async function PATCH(
     );
   }
 
+  // Turning the watermark OFF requires Pro (turning it back ON is always fine).
+  if (parsed.data.branding_enabled === false) {
+    const plan = effectivePlan(await fetchPlanProfile(supabase, user.id));
+    if (!hasProFeatures(plan)) {
+      await supabase.from("builder_events").insert({
+        owner_id: user.id,
+        quiz_id: id,
+        event_type: "paywall_hit",
+        metadata: { trigger: "branding" },
+      });
+      return NextResponse.json(
+        {
+          error: "Removing Funnelform branding is a Pro feature.",
+          reason: "plan_required",
+        },
+        { status: 403 },
+      );
+    }
+  }
+
   // Build the column update explicitly — `whatsapp` maps into the delivery jsonb,
   // it is not its own column, so it must not be spread in.
   const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (parsed.data.title !== undefined) update.title = parsed.data.title;
   if (parsed.data.config !== undefined) update.config = parsed.data.config;
+  if (parsed.data.branding_enabled !== undefined) update.branding_enabled = parsed.data.branding_enabled;
   if (parsed.data.whatsapp !== undefined) {
     const w = parsed.data.whatsapp.trim();
     update.delivery = w ? { whatsapp: w } : {};

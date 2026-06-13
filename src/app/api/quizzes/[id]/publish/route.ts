@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { QuizConfigSchema } from "@/lib/schema";
+import { effectivePlan, fetchPlanProfile, hasProFeatures } from "@/lib/plan";
 
 export const runtime = "nodejs";
 
@@ -45,6 +46,15 @@ export async function POST(
   if (!user) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
+  // Guests can build and edit, but publishing (= going live + collecting
+  // leads) requires a real account. RLS enforces this too (0003); this gives
+  // the client a clean reason to route into the conversion flow.
+  if (user.is_anonymous) {
+    return NextResponse.json(
+      { error: "Create a free account to publish", reason: "guest" },
+      { status: 403 },
+    );
+  }
 
   // Load the saved quiz (RLS-scoped to owner).
   const { data: quiz } = await supabase
@@ -54,6 +64,36 @@ export async function POST(
     .maybeSingle();
   if (!quiz) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  // Plan gate (§5.9): Free = one LIVE quiz. Grandfathered on purpose: a quiz
+  // that is already published (or was, and kept its slug while this one is the
+  // one being re-published) stays re-publishable. The gate only fires when
+  // taking an ADDITIONAL quiz live while another is already live.
+  if (quiz.status !== "published") {
+    const plan = effectivePlan(await fetchPlanProfile(supabase, user.id));
+    if (!hasProFeatures(plan)) {
+      const { count } = await supabase
+        .from("quizzes")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "published")
+        .neq("id", id);
+      if ((count ?? 0) >= 1) {
+        await supabase.from("builder_events").insert({
+          owner_id: user.id,
+          quiz_id: id,
+          event_type: "paywall_hit",
+          metadata: { trigger: "second_quiz" },
+        });
+        return NextResponse.json(
+          {
+            error: "The free plan includes one live quiz. Upgrade to publish more.",
+            reason: "plan_limit",
+          },
+          { status: 403 },
+        );
+      }
+    }
   }
 
   await supabase.from("builder_events").insert({

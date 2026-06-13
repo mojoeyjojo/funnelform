@@ -23,10 +23,16 @@ export function wordCount(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
-/** Fetch a URL through Jina Reader and return clean markdown. */
+/** Fetch a URL through Jina Reader and return clean markdown.
+ *
+ * Authenticates with JINA_API_KEY when set. Keyless reads are rate-limited per
+ * IP and, once an IP earns "bad network reputation", Jina returns 401 for all
+ * anonymous queries — which would make every site look thin. A free key lifts
+ * that. We keep the keyless path as a fallback for unblocked environments. */
 export async function fetchSiteMarkdown(normalizedUrl: string): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), JINA_TIMEOUT_MS);
+  const apiKey = (process.env.JINA_API_KEY ?? process.env.JINA_KEY)?.trim();
   try {
     const res = await fetch(`https://r.jina.ai/${normalizedUrl}`, {
       headers: {
@@ -36,6 +42,7 @@ export async function fetchSiteMarkdown(normalizedUrl: string): Promise<string> 
         // mostly server-rendered marketing sites our users have. Thin-site
         // detection still catches anything that comes back too sparse.
         "X-Engine": "direct",
+        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
       },
       signal: controller.signal,
     });

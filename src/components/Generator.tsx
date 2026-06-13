@@ -7,21 +7,90 @@ import type {
   BuilderEventType,
   GenerateStage,
   GenerateStreamEvent,
-  OutputRating,
+  Goal,
 } from "@/lib/types";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
-import { QuizView, Label } from "./QuizView";
+import { saveQuizAsCurrentUser, newQuizEditorUrl } from "@/lib/saveQuiz";
+import { funnelToSignup } from "@/lib/pendingPrompt";
+import { Label } from "./QuizView";
 
-type Phase = "idle" | "generating" | "thin" | "done" | "error";
-type SaveState = "idle" | "saving" | "error";
+// The pre-generation entry flow is a small in-place card stepper. We collect the
+// user's GOAL and business context BEFORE firing the AI pipeline, because the
+// goal tells the extraction + generation what to look for and optimise toward.
+// Two paths share the goal card and the generating card:
+//   Flow A (has a URL): entry -> goal -> extraction display -> generating -> editor
+//   Flow B (no website): describe -> goal -> generating -> editor
+// Everything downstream of the redirect (editor, dashboard, publish, player) is
+// untouched; the pipeline still produces the same schema-valid quiz it always has.
 
-const STAGE_COPY: Record<GenerateStage, string> = {
-  reading: "Reading your site…",
-  writing: "Writing your quiz…",
-  validating: "Building your results…",
+type Step = "entry" | "describe" | "goal" | "extraction" | "generating";
+type Flow = "A" | "B" | null;
+
+type ExtractFacts = {
+  services: string[];
+  audience: string;
+  tone: string;
+  goalMatch: { label: string; value: string };
 };
 
-const PENDING_QUIZ_KEY = "ff_pending_quiz";
+const GOAL_OPTIONS: { value: Goal; emoji: string; title: string; desc: string }[] = [
+  {
+    value: "book_consultations",
+    emoji: "📅",
+    title: "Book more consultations",
+    desc: "Hot leads go straight to your booking link.",
+  },
+  {
+    value: "promote_offer",
+    emoji: "🎯",
+    title: "Promote a specific offer",
+    desc: "Point every result at your core offer.",
+  },
+  {
+    value: "grow_list",
+    emoji: "📧",
+    title: "Grow my email list",
+    desc: "Every result comes with a strong opt-in.",
+  },
+  {
+    value: "qualify_buyers",
+    emoji: "🔍",
+    title: "Qualify serious buyers",
+    desc: "Low-intent leads exit gracefully.",
+  },
+];
+
+// Generating-card step labels. The first two are already done by the time this
+// card appears (Flow A scraped + extracted; Flow B has the description + goal);
+// the rest tick through on real pipeline stage events.
+const GEN_STEPS_A = [
+  "Read your site with your goal in mind",
+  "Found your services and offers",
+  "Writing your questions",
+  "Building your results",
+  "Setting up your CTAs",
+];
+const GEN_STEPS_B = [
+  "Read your description",
+  "Understood your goal",
+  "Writing your questions",
+  "Building your results",
+  "Setting up your CTAs",
+];
+
+// Map the real pipeline state to a done/active/waiting state per step. Steps 0-1
+// are pre-done; writing -> step 2, validating -> step 3, saving -> step 4.
+function genStepStatus(
+  i: number,
+  stage: GenerateStage | null,
+  saving: boolean,
+): "done" | "active" | "wait" {
+  if (i <= 1) return "done";
+  if (saving) return i < 4 ? "done" : "active";
+  if (stage === "validating") return i < 3 ? "done" : i === 3 ? "active" : "wait";
+  if (stage === "writing") return i === 2 ? "active" : "wait";
+  return "wait";
+}
 
 // Stable per-page-load anonymous session id (the anon generate flow has no
 // auth). Every builder_event for this run is keyed by it so the panel can read
@@ -52,69 +121,60 @@ function captureAttribution(): void {
   document.cookie = `ff_signup_source=${source}; path=/; max-age=${60 * 60 * 24 * 30}; samesite=lax`;
 }
 
-export default function Generator() {
+// `inApp` switches the chrome from the public landing framing to the in-workspace
+// builder: marketing hero is swapped for a compact heading, and the top-right
+// action is a "← Workspace" return link instead of the sign-in / Workspace nav.
+// The flow, pipeline, and editor redirect are identical in both contexts.
+export default function Generator({ inApp = false }: { inApp?: boolean } = {}) {
   const [sessionId] = useState(newSessionId);
-  const [phase, setPhase] = useState<Phase>("idle");
-  const [stage, setStage] = useState<GenerateStage | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
-  // The URL is the default hero input; the textarea is an opt-in escape hatch
-  // for users with no website. Only one is ever mounted (the swap is the whole
-  // mechanism — no tabs/toggles). Both values persist across swaps.
-  const [inputMode, setInputMode] = useState<"url" | "text">("url");
-  const [input, setInput] = useState("");
+  // --- Stepper state -------------------------------------------------------
+  const [step, setStep] = useState<Step>("entry");
+  const [flow, setFlow] = useState<Flow>(null);
+  // Once the goal is confirmed it stays set; the thin-site recovery reuses it so
+  // a user pushed from Flow A into describing their business skips the goal card.
+  const [goalLocked, setGoalLocked] = useState(false);
+
+  const [url, setUrl] = useState("");
   const [description, setDescription] = useState("");
-  const [thinForm, setThinForm] = useState({ whatYouDo: "", whoYouServe: "", mainOffer: "" });
+  const [goal, setGoal] = useState<Goal>("book_consultations");
 
-  // The URL a quiz was generated from (best-effort source_url when saved).
-  const [sourceUrl, setSourceUrl] = useState<string | null>(null);
+  // --- Extraction (Flow A) -------------------------------------------------
+  const [extracting, setExtracting] = useState(false);
+  const [extract, setExtract] = useState<ExtractFacts | null>(null);
+  const [extractThin, setExtractThin] = useState(false);
+  const [siteContent, setSiteContent] = useState<string | null>(null);
 
-  // Editable copy of the generated quiz.
+  // --- Generation ----------------------------------------------------------
+  const [stage, setStage] = useState<GenerateStage | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [genError, setGenError] = useState<string | null>(null);
+  // Kept only so a failed save can be retried without regenerating.
   const [quiz, setQuiz] = useState<GeneratedQuiz | null>(null);
-  const [rating, setRating] = useState<OutputRating | null>(null);
+  // Kept so a failed generation can be retried with the same inputs.
+  const lastRunRef = useRef<{ payload: Record<string, unknown>; src: string | null } | null>(null);
 
-  // Auth + persistence. `undefined` = still loading the session.
+  // Auth state for the nav. `undefined` = still loading the session.
   const [user, setUser] = useState<User | null | undefined>(undefined);
-  const [saveState, setSaveState] = useState<SaveState>("idle");
+  // Ref mirror so stream-event closures (created before the setUser render
+  // committed) can still read the CURRENT auth state.
+  const userRef = useRef<User | null | undefined>(undefined);
 
   // Instrumentation panel is a dev/debug surface, not a landing-page element.
   const [debug, setDebug] = useState(false);
-
-  // Track distinct edited field paths so field_edited fires once per field.
-  const editedPaths = useRef<Set<string>>(new Set());
-  // Bump to tell the events panel to refresh.
   const [refreshKey, setRefreshKey] = useState(0);
   const refreshEvents = useCallback(() => setRefreshKey((k) => k + 1), []);
 
-  // Resolve the current session once; capture attribution; check debug flag.
   useEffect(() => {
     captureAttribution();
-    setDebug(new URLSearchParams(window.location.search).has("debug"));
     const supabase = createSupabaseBrowserClient();
-    supabase.auth.getUser().then(({ data }) => setUser(data.user ?? null));
+    supabase.auth.getUser().then(({ data }) => {
+      const u = data.user ?? null;
+      userRef.current = u;
+      setUser(u);
+      setDebug(new URLSearchParams(window.location.search).has("debug"));
+    });
   }, []);
-
-  // Value-first claim: once we know the user is signed in, persist any quiz they
-  // stashed before authenticating (the magic-moment output carried across the
-  // auth round-trip), then land them on the dashboard.
-  useEffect(() => {
-    if (!user) return;
-    const pending = window.localStorage.getItem(PENDING_QUIZ_KEY);
-    if (!pending) return;
-    window.localStorage.removeItem(PENDING_QUIZ_KEY);
-    (async () => {
-      try {
-        const res = await fetch("/api/quizzes", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: pending,
-        });
-        if (res.ok) window.location.href = "/dashboard";
-      } catch {
-        // leave them on the page; they can re-save manually
-      }
-    })();
-  }, [user]);
 
   const recordClientEvent = useCallback(
     async (eventType: BuilderEventType, metadata?: Record<string, unknown>) => {
@@ -133,23 +193,13 @@ export default function Generator() {
     [sessionId, refreshEvents],
   );
 
-  // Fire first_output_viewed exactly once, on first render of a generated quiz,
-  // BEFORE any edit (so the rating signal reads raw AI quality).
-  useEffect(() => {
-    if (phase === "done" && quiz) {
-      void recordClientEvent("first_output_viewed");
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase === "done" && quiz != null]);
-
-  async function runGenerate(payload: Record<string, unknown>) {
-    setPhase("generating");
+  // ---- Generation pipeline (unchanged contract: streams real NDJSON events) --
+  async function runGenerate(payload: Record<string, unknown>, src: string | null) {
+    lastRunRef.current = { payload, src };
     setStage(null);
-    setError(null);
+    setSaving(false);
+    setGenError(null);
     setQuiz(null);
-    setRating(null);
-    setSaveState("idle");
-    editedPaths.current = new Set();
 
     try {
       const res = await fetch("/api/generate", {
@@ -162,9 +212,6 @@ export default function Generator() {
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buf = "";
-
-      // Read the NDJSON stream; each line is a real pipeline event.
-      // eslint-disable-next-line no-constant-condition
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -174,316 +221,767 @@ export default function Generator() {
           const line = buf.slice(0, nl).trim();
           buf = buf.slice(nl + 1);
           if (!line) continue;
-          handleStreamEvent(JSON.parse(line) as GenerateStreamEvent);
+          handleStreamEvent(JSON.parse(line) as GenerateStreamEvent, payload, src);
         }
       }
-      // Server records generate_started/succeeded/failed; refresh the panel.
       refreshEvents();
     } catch {
-      setPhase("error");
-      setError("Something went wrong contacting the generator. Please try again.");
+      setGenError("Something went wrong contacting the generator. Please try again.");
     }
   }
 
-  function handleStreamEvent(evt: GenerateStreamEvent) {
+  function handleStreamEvent(
+    evt: GenerateStreamEvent,
+    payload: Record<string, unknown>,
+    src: string | null,
+  ) {
     switch (evt.type) {
       case "stage":
         setStage(evt.stage);
         break;
       case "thin_site":
-        setPhase("thin");
+        // Generation could not read enough from the site (e.g. extraction was
+        // skipped). Route the user into describing their business, goal intact.
+        thinToDescribe();
         break;
       case "done":
-        setQuiz({ title: evt.title, config: evt.config as QuizConfig });
-        setPhase("done");
+        void saveAndOpen({ title: evt.title, config: evt.config as QuizConfig }, src);
         break;
-      case "error":
-        setError(evt.message);
-        setPhase("error");
+      case "error": {
+        // Rate-limited WITHOUT a real account = the signup funnel, not an error:
+        // stash the prompt (goal rides along) and route into account creation.
+        const u = userRef.current;
+        if (evt.code === "rate_limited" && (!u || u.is_anonymous === true)) {
+          void funnelToSignup({ payload, src });
+          return;
+        }
+        setGenError(evt.message);
         break;
+      }
     }
+  }
+
+  // Jotform flow: the quiz never renders here. It's saved immediately (silent
+  // guest session if needed) and opened in the editor, where the rest live.
+  async function saveAndOpen(generated: GeneratedQuiz, src: string | null) {
+    setQuiz(generated);
+    setSaving(true);
+    await recordClientEvent("first_output_viewed");
+    const id = await saveQuizAsCurrentUser({ quiz: generated, sourceUrl: src });
+    if (id) {
+      window.location.href = newQuizEditorUrl(id, sessionId);
+    } else {
+      setSaving(false);
+      setGenError("Your quiz was built, but we couldn't open it. Please try again.");
+    }
+  }
+
+  // ---- Step transitions ----------------------------------------------------
+  function goToDescribe() {
+    setFlow("B");
+    setStep("describe");
   }
 
   function onSubmitUrl(e: React.FormEvent) {
     e.preventDefault();
-    if (!input.trim()) return;
-    setSourceUrl(input.trim());
-    void runGenerate({ input });
+    if (!url.trim()) return;
+    setFlow("A");
+    setGoalLocked(false);
+    setStep("goal");
   }
 
-  // The freeform description rides the same `input` field: the server routes any
-  // non-URL input to the text-description branch (route.ts), so no new API path.
-  function onSubmitDescription(e: React.FormEvent) {
+  function onSubmitDescribe(e: React.FormEvent) {
     e.preventDefault();
     if (!description.trim()) return;
-    setSourceUrl(null);
-    void runGenerate({ input: description });
+    if (goalLocked) startGenerateB();
+    else setStep("goal");
   }
 
-  function onSubmitThin(e: React.FormEvent) {
-    e.preventDefault();
-    setSourceUrl(null);
-    void runGenerate({ description: thinForm });
+  function continueGoal() {
+    setGoalLocked(true);
+    if (flow === "A") void startExtraction();
+    else startGenerateB();
   }
 
-  function chooseRating(r: OutputRating) {
-    if (rating) return;
-    setRating(r);
-    void recordClientEvent("output_rating", { rating: r });
-  }
-
-  // Immutable edit of the quiz, firing field_edited once per distinct path.
-  function editField(path: string, mutate: (draft: GeneratedQuiz) => void) {
-    setQuiz((prev) => {
-      if (!prev) return prev;
-      const draft: GeneratedQuiz = structuredClone(prev);
-      mutate(draft);
-      return draft;
-    });
-    if (!editedPaths.current.has(path)) {
-      editedPaths.current.add(path);
-      void recordClientEvent("field_edited", { field_path: path });
-    }
-  }
-
-  // Save the generated quiz. Value-first: if signed in, persist immediately and
-  // go to the dashboard; if not, stash it and send them through auth — the claim
-  // effect saves it on their return. The account wall comes AFTER the magic moment.
-  async function saveQuiz() {
-    if (!quiz) return;
-    const payload = JSON.stringify({
-      title: quiz.title,
-      config: quiz.config,
-      source_url: sourceUrl ?? undefined,
-    });
-    if (user) {
-      setSaveState("saving");
-      try {
-        const res = await fetch("/api/quizzes", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: payload,
-        });
-        if (res.ok) window.location.href = "/dashboard";
-        else setSaveState("error");
-      } catch {
-        setSaveState("error");
+  async function startExtraction() {
+    setStep("extraction");
+    setExtract(null);
+    setExtractThin(false);
+    setSiteContent(null);
+    setExtracting(true);
+    try {
+      const res = await fetch("/api/extract", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, input: url.trim(), goal }),
+      });
+      const data = (await res.json()) as
+        | { thin: true }
+        | (ExtractFacts & { siteContent?: string })
+        | { error: string };
+      if (!res.ok || "error" in data) {
+        // Extraction is a nicety, not a gate — skip the preview, generate now.
+        startGenerateA(null);
+        return;
       }
-    } else {
-      window.localStorage.setItem(PENDING_QUIZ_KEY, payload);
-      window.location.href = "/login?next=" + encodeURIComponent("/");
+      if ("thin" in data && data.thin) {
+        setExtractThin(true);
+      } else {
+        const facts = data as ExtractFacts & { siteContent?: string };
+        setExtract({
+          services: facts.services ?? [],
+          audience: facts.audience ?? "",
+          tone: facts.tone ?? "",
+          goalMatch: facts.goalMatch ?? { label: "", value: "" },
+        });
+        setSiteContent(facts.siteContent ?? null);
+      }
+    } catch {
+      startGenerateA(null);
+      return;
+    } finally {
+      setExtracting(false);
     }
   }
 
-  const busy = phase === "generating";
+  // `content` lets the caller force a fresh scrape (null) when extraction was
+  // skipped; otherwise we reuse the markdown extraction already fetched.
+  function startGenerateA(content: string | null = siteContent) {
+    setStep("generating");
+    const payload: Record<string, unknown> = { input: url.trim(), goal };
+    if (content) payload.siteContent = content;
+    void runGenerate(payload, url.trim());
+  }
+
+  function startGenerateB() {
+    setStep("generating");
+    void runGenerate({ input: description.trim(), goal }, null);
+  }
+
+  // Thin site (from the extraction card or a thin generate): carry the goal into
+  // describing the business instead, and skip the goal card (already chosen).
+  function thinToDescribe() {
+    setFlow("B");
+    setGoalLocked(true);
+    setStep("describe");
+  }
+
+  function retryGeneration() {
+    const last = lastRunRef.current;
+    if (last) void runGenerate(last.payload, last.src);
+  }
+
+  // ---- Derived: progress dots ---------------------------------------------
+  const dotLabels =
+    flow === "B"
+      ? ["Entry", "Describe", "Goal", "Generate"]
+      : ["Entry", "Goal", "Extraction", "Generate", "Output"];
+  const dotIndex = (() => {
+    if (flow === "B") {
+      if (step === "describe") return 1;
+      if (step === "goal") return 2;
+      if (step === "generating") return 3;
+      return 0;
+    }
+    if (step === "goal") return 1;
+    if (step === "extraction") return 2;
+    if (step === "generating") return 3;
+    return 0;
+  })();
 
   return (
     <main>
-      {/* ============ HERO — dreamy daylight sky (serene, weightless) ============ */}
       <section className="relative isolate flex min-h-svh flex-col overflow-hidden">
-        {/* Sky: base gradient + sun bloom + mint rise + SVG ellipse-cluster
-            clouds, feathered into the pearl page at both edges. No image asset. */}
         <HeroSky />
 
-        {/* Nav — floats over the sky (absolute) so it doesn't take layout space
-            and the hero copy centers against the FULL viewport height. */}
+        {/* Topbar — wordmark + flow badge (left), progress dots + auth (right) */}
         <nav className="absolute inset-x-0 top-0 z-10 mx-auto flex w-full max-w-5xl items-center justify-between px-5 pt-6 sm:px-8">
-          <span className="text-lg font-extrabold tracking-tight text-ink-950">
-            Funnelform
-          </span>
-          {user ? (
-            <a
-              href="/dashboard"
-              className="rounded-full border border-ink-950/15 px-4 py-2 text-xs font-bold uppercase tracking-[0.1em] text-ink-950 transition-all hover:border-signal-600 hover:text-signal-600 active:scale-[0.98]"
-            >
-              Dashboard →
-            </a>
-          ) : user === null ? (
-            <a
-              href="/login"
-              className="rounded-full border border-ink-950/15 px-4 py-2 text-xs font-bold uppercase tracking-[0.1em] text-ink-950 transition-all hover:border-signal-600 hover:text-signal-600 active:scale-[0.98]"
-            >
-              Sign in
-            </a>
-          ) : (
-            <span className="h-8" />
-          )}
-        </nav>
-
-        {/* Hero copy + the magic-moment input — centered in the sky */}
-        <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center px-5 py-16 text-center sm:px-8">
-          <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-500">
-            AI quiz funnels for your business
-          </p>
-          <h1 className="mt-4 text-4xl font-extrabold leading-[0.98] tracking-[-0.04em] text-ink-950 sm:text-6xl">
-            Paste your link. Watch the funnel build itself.
-          </h1>
-          <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-ink-600 sm:text-lg">
-            One URL in, a complete quiz funnel out. Questions, scored outcomes,
-            and a follow-up sequence, written for your business in seconds.
-          </p>
-
-          {/* Input — URL is the hero; description is the opt-in escape hatch. */}
-          <div className="mx-auto mt-10 w-full max-w-2xl text-left">
-            {inputMode === "url" ? (
-              <>
-                <form
-                  onSubmit={onSubmitUrl}
-                  className="glass-lift flex items-center gap-2 rounded-full p-1.5 pl-5"
-                  noValidate
-                >
-                  <input
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    placeholder="yourbusiness.com"
-                    disabled={busy}
-                    className="min-w-0 flex-1 bg-transparent text-sm font-medium text-ink-950 outline-none placeholder:text-gray-400"
-                  />
-                  <button
-                    type="submit"
-                    disabled={busy || !input.trim()}
-                    className="shrink-0 rounded-full bg-ink-950 px-5 py-3 text-xs font-bold uppercase tracking-[0.1em] text-white shadow-pill transition-all hover:bg-signal-600 active:scale-[0.98] disabled:opacity-40"
-                  >
-                    <span className="sm:hidden">Build →</span>
-                    <span className="hidden sm:inline">Build my quiz →</span>
-                  </button>
-                </form>
-                <div className="mt-3 text-center">
-                  <button
-                    type="button"
-                    onClick={() => setInputMode("text")}
-                    disabled={busy}
-                    className="text-xs text-ink-500 underline decoration-ink-300 underline-offset-4 transition-colors hover:text-signal-600 disabled:opacity-40"
-                  >
-                    No website? Describe your business instead.
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <form onSubmit={onSubmitDescription} className="space-y-3" noValidate>
-                  <textarea
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    placeholder="I'm a nutrition coach helping women over 40 balance their hormones naturally. My main offer is a 12-week 1-on-1 program at €1,200."
-                    disabled={busy}
-                    rows={4}
-                    className="glass-lift w-full resize-none rounded-[22px] px-5 py-4 text-sm font-medium leading-relaxed text-ink-950 outline-none placeholder:text-gray-400"
-                  />
-                  <div className="flex justify-end">
-                    <button
-                      type="submit"
-                      disabled={busy || !description.trim()}
-                      className="rounded-full bg-ink-950 px-6 py-3 text-xs font-bold uppercase tracking-[0.1em] text-white shadow-pill transition-all hover:bg-signal-600 active:scale-[0.98] disabled:opacity-40"
-                    >
-                      Build my quiz →
-                    </button>
-                  </div>
-                </form>
-                <div className="mt-6 text-center">
-                  <button
-                    type="button"
-                    onClick={() => setInputMode("url")}
-                    disabled={busy}
-                    className="inline-flex items-center gap-2 rounded-full border border-signal-600 px-4 py-2 text-xs font-semibold text-signal-600 transition-all hover:bg-signal-600/5 active:scale-[0.98] disabled:opacity-40"
-                  >
-                    ← Use a URL instead
-                    <span className="rounded-full bg-signal-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.1em] text-white">
-                      Recommended
-                    </span>
-                  </button>
-                </div>
-              </>
-            )}
-
-            {/* Progress (real pipeline stages) */}
-            {busy && (
-              <div
-                className="mt-6 flex items-center justify-center gap-3 text-sm font-medium text-ink-600"
-                aria-live="polite"
-                role="status"
+          <div className="flex items-center gap-3">
+            <span className="text-lg font-extrabold tracking-tight text-ink-950">Funnelform</span>
+            {flow && <FlowBadge flow={flow} />}
+          </div>
+          <div className="flex items-center gap-4">
+            {flow && <DotBar labels={dotLabels} activeIndex={dotIndex} />}
+            {inApp ? (
+              <a
+                href="/dashboard"
+                className="rounded-full border border-ink-950/15 px-4 py-2 text-xs font-bold uppercase tracking-[0.1em] text-ink-950 transition-all hover:border-signal-600 hover:text-signal-600 active:scale-[0.98]"
               >
-                <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-signal-600" />
-                {stage ? STAGE_COPY[stage] : "Starting…"}
-              </div>
+                ← Workspace
+              </a>
+            ) : user ? (
+              <a
+                href="/dashboard"
+                className="rounded-full border border-ink-950/15 px-4 py-2 text-xs font-bold uppercase tracking-[0.1em] text-ink-950 transition-all hover:border-signal-600 hover:text-signal-600 active:scale-[0.98]"
+              >
+                Workspace →
+              </a>
+            ) : user === null ? (
+              <a
+                href="/login"
+                className="rounded-full border border-ink-950/15 px-4 py-2 text-xs font-bold uppercase tracking-[0.1em] text-ink-950 transition-all hover:border-signal-600 hover:text-signal-600 active:scale-[0.98]"
+              >
+                Sign in
+              </a>
+            ) : (
+              <span className="h-8" />
             )}
           </div>
-        </div>
-        {/* (bottom feather handled by mask-fade-y on the sky layer) */}
-      </section>
+        </nav>
 
-      {/* ================= OUTPUT — light app surface ================= */}
-      <section className="mx-auto max-w-3xl px-5 pb-20 sm:px-8">
-        {/* Thin-site fallback (3 fields) */}
-        {phase === "thin" && (
-          <form
-            onSubmit={onSubmitThin}
-            className="mt-10 space-y-3 rounded-[22px] bg-white p-6 shadow-soft ring-1 ring-ink-950/5"
-          >
-            <p className="text-sm font-semibold">
-              We couldn’t read enough from that link. Tell us about your business:
-            </p>
-            {(
-              [
-                ["whatYouDo", "What you do"],
-                ["whoYouServe", "Who you serve"],
-                ["mainOffer", "Your main offer"],
-              ] as const
-            ).map(([key, label]) => (
-              <input
-                key={key}
-                placeholder={label}
-                value={thinForm[key]}
-                onChange={(e) => setThinForm((f) => ({ ...f, [key]: e.target.value }))}
-                className="w-full rounded-full border border-ink-200 px-4 py-2.5 text-sm outline-none focus:border-signal-600"
-              />
+        {/* Centered card slot. Hero copy only at the front door (entry). */}
+        <div className="mx-auto flex w-full max-w-xl flex-1 flex-col justify-center px-5 py-24 text-center sm:px-8">
+          {step === "entry" &&
+            (inApp ? (
+              <div className="mb-9">
+                <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-500">
+                  New quiz
+                </p>
+                <h1 className="mt-4 text-3xl font-extrabold leading-[0.98] tracking-[-0.04em] text-ink-950 sm:text-4xl">
+                  Let&apos;s build your next funnel
+                </h1>
+                <p className="mx-auto mt-4 max-w-md text-base leading-relaxed text-ink-600">
+                  Paste your link or describe your business. It lands straight in
+                  your workspace.
+                </p>
+              </div>
+            ) : (
+              <div className="mb-9">
+                <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-500">
+                  AI quiz funnels for your business
+                </p>
+                <h1 className="mt-4 text-4xl font-extrabold leading-[0.98] tracking-[-0.04em] text-ink-950 sm:text-5xl">
+                  Paste your link. Watch the funnel build itself.
+                </h1>
+                <p className="mx-auto mt-4 max-w-md text-base leading-relaxed text-ink-600">
+                  One URL in, a complete quiz funnel out — questions, scored
+                  outcomes, and a follow-up sequence, in seconds.
+                </p>
+              </div>
             ))}
-            <button
-              type="submit"
-              className="rounded-full bg-ink-950 px-5 py-2.5 text-xs font-bold uppercase tracking-[0.1em] text-white shadow-pill transition-all hover:bg-signal-600 active:scale-[0.98]"
-            >
-              Build from this →
-            </button>
-          </form>
-        )}
 
-        {/* Error */}
-        {phase === "error" && error && (
-          <p className="mt-10 rounded-[22px] border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
-            {error}
-          </p>
-        )}
-
-        {/* Generated quiz */}
-        {phase === "done" && quiz && (
-          <>
-            {/* Save bar — the account wall, placed AFTER the magic moment. */}
-            <div className="glass mt-10 flex flex-col gap-2 rounded-[22px] p-5 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm font-semibold">
-                {user ? "Save this quiz to your account." : "Create a free account to keep going."}
-              </p>
-              <button
-                onClick={saveQuiz}
-                disabled={saveState === "saving"}
-                className="rounded-full bg-ink-950 px-5 py-2.5 text-xs font-bold uppercase tracking-[0.1em] text-white shadow-pill transition-all hover:bg-signal-600 active:scale-[0.98] disabled:opacity-40"
-              >
-                {saveState === "saving" ? "Saving…" : user ? "Save quiz →" : "Save & create account →"}
-              </button>
-            </div>
-            {saveState === "error" && (
-              <p className="mt-2 text-xs text-rose-700">Couldn’t save just now. Please try again.</p>
+          <StepCard key={step}>
+            {step === "entry" && (
+              <EntryCard
+                url={url}
+                setUrl={setUrl}
+                onSubmit={onSubmitUrl}
+                onDescribe={goToDescribe}
+              />
             )}
 
-            <QuizView quiz={quiz} rating={rating} onRate={chooseRating} onEdit={editField} />
-          </>
-        )}
+            {step === "describe" && (
+              <DescribeCard
+                description={description}
+                setDescription={setDescription}
+                onSubmit={onSubmitDescribe}
+                onBack={goalLocked ? undefined : () => setStep("entry")}
+                ctaLabel={goalLocked ? "Build my quiz" : "Continue"}
+              />
+            )}
 
-        {/* Instrumentation panel — dev/debug only (?debug) */}
-        {debug && (
-          <EventsPanel sessionId={sessionId} refreshKey={refreshKey} onRefresh={refreshEvents} />
-        )}
+            {step === "goal" && (
+              <GoalCard
+                flow={flow}
+                goal={goal}
+                setGoal={setGoal}
+                onContinue={continueGoal}
+                onBack={() => setStep(flow === "B" ? "describe" : "entry")}
+              />
+            )}
+
+            {step === "extraction" && (
+              <ExtractionCard
+                extracting={extracting}
+                extract={extract}
+                thin={extractThin}
+                onContinue={() => startGenerateA()}
+                onDescribe={thinToDescribe}
+              />
+            )}
+
+            {step === "generating" && (
+              <GeneratingCard
+                flow={flow}
+                stage={stage}
+                saving={saving}
+                error={genError}
+                hasQuiz={!!quiz}
+                onRetry={retryGeneration}
+                onOpen={() => quiz && void saveAndOpen(quiz, lastRunRef.current?.src ?? null)}
+              />
+            )}
+          </StepCard>
+        </div>
       </section>
+
+      {debug && (
+        <section className="mx-auto max-w-3xl px-5 pb-20 sm:px-8">
+          <EventsPanel sessionId={sessionId} refreshKey={refreshKey} onRefresh={refreshEvents} />
+        </section>
+      )}
     </main>
+  );
+}
+
+// =============================================================================
+// Stepper chrome
+
+// Crossfade-in wrapper: each step remounts (keyed) and animates opacity +
+// translateY. Reduced motion collapses the transition globally.
+function StepCard({ children }: { children: React.ReactNode }) {
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    const r = requestAnimationFrame(() => setShown(true));
+    return () => cancelAnimationFrame(r);
+  }, []);
+  return (
+    <div
+      className={`transition-all duration-[360ms] ease-[cubic-bezier(.4,0,.2,1)] motion-reduce:transition-none ${
+        shown ? "translate-y-0 opacity-100" : "translate-y-2 opacity-0"
+      }`}
+    >
+      {children}
+    </div>
+  );
+}
+
+function DotBar({ labels, activeIndex }: { labels: string[]; activeIndex: number }) {
+  return (
+    <div className="hidden items-center gap-1.5 sm:flex" aria-hidden>
+      {labels.map((label, i) => (
+        <span
+          key={label}
+          className={`h-1.5 rounded-full transition-all duration-300 ${
+            i === activeIndex
+              ? "w-4 bg-signal-600"
+              : i < activeIndex
+                ? "w-1.5 bg-emerald-500"
+                : "w-1.5 bg-ink-200"
+          }`}
+        />
+      ))}
+    </div>
+  );
+}
+
+function FlowBadge({ flow }: { flow: "A" | "B" }) {
+  return flow === "A" ? (
+    <span className="rounded-full bg-signal-600/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.1em] text-signal-600">
+      Flow A
+    </span>
+  ) : (
+    <span className="rounded-full bg-[#1ec4b2]/12 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.1em] text-[#0d8f82]">
+      Flow B
+    </span>
+  );
+}
+
+// Shared glass panel for every step card.
+function Panel({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div className={`glass mx-auto w-full rounded-[22px] p-7 text-left sm:p-8 ${className}`}>
+      {children}
+    </div>
+  );
+}
+
+const PRIMARY_BTN =
+  "rounded-full bg-ink-950 px-6 py-3 text-xs font-bold uppercase tracking-[0.1em] text-white shadow-pill transition-all hover:bg-signal-600 active:scale-[0.98] disabled:opacity-40";
+
+// =============================================================================
+// Step cards
+
+function EntryCard({
+  url,
+  setUrl,
+  onSubmit,
+  onDescribe,
+}: {
+  url: string;
+  setUrl: (v: string) => void;
+  onSubmit: (e: React.FormEvent) => void;
+  onDescribe: () => void;
+}) {
+  return (
+    <Panel>
+      <form
+        onSubmit={onSubmit}
+        className="flex items-center gap-2 rounded-full border border-ink-200 bg-white/70 p-1.5 pl-5"
+        noValidate
+      >
+        <input
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder="yourbusiness.com"
+          className="min-w-0 flex-1 bg-transparent text-sm font-medium text-ink-950 outline-none placeholder:text-ink-400"
+          aria-label="Your website URL"
+        />
+        <button type="submit" disabled={!url.trim()} className={`shrink-0 ${PRIMARY_BTN}`}>
+          <span className="sm:hidden">Start →</span>
+          <span className="hidden sm:inline">Build my quiz →</span>
+        </button>
+      </form>
+
+      <div className="my-4 flex items-center gap-3">
+        <span className="h-px flex-1 bg-ink-200/80" />
+        <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-ink-400">or</span>
+        <span className="h-px flex-1 bg-ink-200/80" />
+      </div>
+
+      <button
+        type="button"
+        onClick={onDescribe}
+        className="w-full text-center text-sm font-medium text-ink-500 underline decoration-ink-300 underline-offset-4 transition-colors hover:text-signal-600"
+      >
+        Describe your business instead
+      </button>
+    </Panel>
+  );
+}
+
+function DescribeCard({
+  description,
+  setDescription,
+  onSubmit,
+  onBack,
+  ctaLabel,
+}: {
+  description: string;
+  setDescription: (v: string) => void;
+  onSubmit: (e: React.FormEvent) => void;
+  onBack?: () => void;
+  ctaLabel: string;
+}) {
+  return (
+    <Panel>
+      <h2 className="text-xl font-extrabold tracking-[-0.02em] text-ink-950">
+        Tell us about your business
+      </h2>
+
+      {/* Two numbered cues live INSIDE a tinted container — guidance, not fields. */}
+      <div className="mt-4 rounded-[16px] bg-signal-600/[0.04] p-4 ring-1 ring-signal-600/10">
+        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-500">
+          Cover these two things
+        </p>
+        <ol className="mt-2 space-y-1.5 text-sm text-ink-600">
+          <li className="flex gap-2">
+            <span className="font-mono text-xs font-bold text-signal-600">1.</span>
+            What do you do, and who do you do it for?
+          </li>
+          <li className="flex gap-2">
+            <span className="font-mono text-xs font-bold text-signal-600">2.</span>
+            What is your main offer or service?
+          </li>
+        </ol>
+      </div>
+
+      <form onSubmit={onSubmit} className="mt-4" noValidate>
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          rows={4}
+          placeholder="I'm a nutrition coach helping women over 40 balance their hormones naturally. My main offer is a 12-week 1-on-1 program at €1,200."
+          className="w-full resize-none rounded-[16px] border border-ink-200 bg-white/70 px-4 py-3 text-sm font-medium leading-relaxed text-ink-950 outline-none transition-colors placeholder:text-ink-400 focus:border-signal-600"
+          aria-label="Describe your business"
+        />
+        <div className="mt-4 flex items-center justify-between">
+          {onBack ? (
+            <button
+              type="button"
+              onClick={onBack}
+              className="text-sm font-medium text-ink-500 transition-colors hover:text-signal-600"
+            >
+              ← Use a website
+            </button>
+          ) : (
+            <span />
+          )}
+          <button type="submit" disabled={!description.trim()} className={PRIMARY_BTN}>
+            {ctaLabel} →
+          </button>
+        </div>
+      </form>
+    </Panel>
+  );
+}
+
+function GoalCard({
+  flow,
+  goal,
+  setGoal,
+  onContinue,
+  onBack,
+}: {
+  flow: Flow;
+  goal: Goal;
+  setGoal: (g: Goal) => void;
+  onContinue: () => void;
+  onBack: () => void;
+}) {
+  return (
+    <Panel>
+      <h2 className="text-xl font-extrabold tracking-[-0.02em] text-ink-950">
+        What should this quiz do for you?
+      </h2>
+      <p className="mt-1.5 text-sm text-ink-500">
+        {flow === "A"
+          ? "We'll use this to know exactly what to look for on your site."
+          : "We'll shape your questions, outcomes, and CTAs around this."}
+      </p>
+
+      <div className="mt-5 grid gap-2.5">
+        {GOAL_OPTIONS.map((opt) => {
+          const selected = goal === opt.value;
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => setGoal(opt.value)}
+              aria-pressed={selected}
+              className={`flex items-start gap-3 rounded-[16px] border p-3.5 text-left transition-all active:scale-[0.99] ${
+                selected
+                  ? "border-signal-600 bg-signal-600/[0.04]"
+                  : "border-ink-200 bg-white/60 hover:border-ink-300"
+              }`}
+            >
+              <span className="text-xl leading-none" aria-hidden>
+                {opt.emoji}
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm font-bold text-ink-950">{opt.title}</span>
+                <span className="block text-xs leading-snug text-ink-500">{opt.desc}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mt-5 flex items-center justify-between">
+        <button
+          type="button"
+          onClick={onBack}
+          className="text-sm font-medium text-ink-500 transition-colors hover:text-signal-600"
+        >
+          ← Back
+        </button>
+        <button type="button" onClick={onContinue} className={PRIMARY_BTN}>
+          Continue →
+        </button>
+      </div>
+    </Panel>
+  );
+}
+
+function ExtractionCard({
+  extracting,
+  extract,
+  thin,
+  onContinue,
+  onDescribe,
+}: {
+  extracting: boolean;
+  extract: ExtractFacts | null;
+  thin: boolean;
+  onContinue: () => void;
+  onDescribe: () => void;
+}) {
+  if (extracting) {
+    return (
+      <Panel>
+        <div className="flex items-center gap-3" aria-live="polite" role="status">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-signal-600 motion-reduce:animate-none" />
+          <p className="text-sm font-semibold text-ink-700">
+            Reading your site with your goal in mind…
+          </p>
+        </div>
+        <div className="mt-5 space-y-2.5">
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              className="h-3 animate-pulse rounded-full bg-ink-100 motion-reduce:animate-none"
+              style={{ width: `${85 - i * 18}%` }}
+            />
+          ))}
+        </div>
+      </Panel>
+    );
+  }
+
+  if (thin || !extract) {
+    return (
+      <Panel>
+        <h2 className="text-xl font-extrabold tracking-[-0.02em] text-ink-950">
+          We couldn&apos;t read enough from that link
+        </h2>
+        <p className="mt-2 text-sm text-ink-600">
+          Some sites block readers or are light on text. Tell us about your
+          business instead and we&apos;ll take it from there — your goal is
+          already set.
+        </p>
+        <div className="mt-5 flex justify-end">
+          <button type="button" onClick={onDescribe} className={PRIMARY_BTN}>
+            Describe your business →
+          </button>
+        </div>
+      </Panel>
+    );
+  }
+
+  return (
+    <Panel>
+      <h2 className="text-xl font-extrabold tracking-[-0.02em] text-ink-950">
+        Here&apos;s what we found
+      </h2>
+      <p className="mt-1.5 text-sm text-ink-500">
+        We&apos;ll build your quiz around this. You can fine-tune everything in
+        the editor.
+      </p>
+
+      <dl className="mt-5 space-y-3">
+        {extract.services.length > 0 && (
+          <ExtractRow label="Services">
+            <div className="flex flex-wrap gap-1.5">
+              {extract.services.map((s) => (
+                <span
+                  key={s}
+                  className="rounded-full bg-ink-50 px-2.5 py-1 text-xs font-medium text-ink-700"
+                >
+                  {s}
+                </span>
+              ))}
+            </div>
+          </ExtractRow>
+        )}
+        {extract.audience && <ExtractRow label="Audience">{extract.audience}</ExtractRow>}
+        {extract.tone && <ExtractRow label="Tone">{extract.tone}</ExtractRow>}
+        {extract.goalMatch.value && (
+          <div className="rounded-[16px] border border-signal-600/20 bg-signal-600/[0.04] p-3.5">
+            <p className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-signal-600">
+              ↑ matched to your goal · {extract.goalMatch.label}
+            </p>
+            <p className="mt-1 text-sm font-medium text-ink-800">{extract.goalMatch.value}</p>
+          </div>
+        )}
+      </dl>
+
+      <div className="mt-6 flex items-center justify-between">
+        <button
+          type="button"
+          onClick={onDescribe}
+          className="text-sm font-medium text-ink-500 transition-colors hover:text-signal-600"
+        >
+          Not quite right?
+        </button>
+        <button type="button" onClick={onContinue} className={PRIMARY_BTN}>
+          Looks good, build it →
+        </button>
+      </div>
+    </Panel>
+  );
+}
+
+function ExtractRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="grid grid-cols-[5.5rem_1fr] items-baseline gap-3">
+      <dt className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-400">
+        {label}
+      </dt>
+      <dd className="text-sm text-ink-700">{children}</dd>
+    </div>
+  );
+}
+
+function GeneratingCard({
+  flow,
+  stage,
+  saving,
+  error,
+  hasQuiz,
+  onRetry,
+  onOpen,
+}: {
+  flow: Flow;
+  stage: GenerateStage | null;
+  saving: boolean;
+  error: string | null;
+  hasQuiz: boolean;
+  onRetry: () => void;
+  onOpen: () => void;
+}) {
+  const steps = flow === "B" ? GEN_STEPS_B : GEN_STEPS_A;
+
+  if (error) {
+    return (
+      <Panel>
+        <div className="rounded-[16px] border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+          {error}
+        </div>
+        <div className="mt-4 flex justify-end gap-2">
+          {hasQuiz ? (
+            <button type="button" onClick={onOpen} className={PRIMARY_BTN}>
+              Open my quiz →
+            </button>
+          ) : (
+            <button type="button" onClick={onRetry} className={PRIMARY_BTN}>
+              Try again →
+            </button>
+          )}
+        </div>
+      </Panel>
+    );
+  }
+
+  return (
+    <Panel>
+      <h2 className="text-xl font-extrabold tracking-[-0.02em] text-ink-950">
+        {saving ? "Opening your quiz…" : "Building your quiz…"}
+      </h2>
+      <ol className="mt-5 space-y-3" aria-live="polite">
+        {steps.map((label, i) => {
+          const status = genStepStatus(i, stage, saving);
+          return (
+            <li key={label} className="flex items-center gap-3">
+              <StepDot status={status} />
+              <span
+                className={`text-sm ${
+                  status === "active"
+                    ? "font-semibold text-ink-900"
+                    : status === "done"
+                      ? "text-ink-500"
+                      : "text-ink-400"
+                }`}
+              >
+                {label}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+    </Panel>
+  );
+}
+
+function StepDot({ status }: { status: "done" | "active" | "wait" }) {
+  if (status === "done") {
+    return (
+      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-[11px] text-white">
+        ✓
+      </span>
+    );
+  }
+  if (status === "active") {
+    return (
+      <span className="relative flex h-5 w-5 shrink-0 items-center justify-center">
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-signal-600/40 motion-reduce:animate-none" />
+        <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-signal-600" />
+      </span>
+    );
+  }
+  return (
+    <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+      <span className="inline-flex h-2.5 w-2.5 rounded-full border border-ink-200" />
+    </span>
   );
 }
 

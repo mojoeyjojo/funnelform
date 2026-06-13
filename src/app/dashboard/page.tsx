@@ -1,6 +1,16 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import {
+  effectivePlan,
+  fetchPlanProfile,
+  leadSoftCap,
+  monthStartIso,
+  type Plan,
+} from "@/lib/plan";
+import AuthOverlay from "@/components/AuthOverlay";
+import WorkspaceQuizzes, { type QuizCard } from "@/components/WorkspaceQuizzes";
+import AccountMenu from "@/components/AccountMenu";
 
 export const runtime = "nodejs";
 
@@ -15,12 +25,25 @@ type QuizRow = {
 // Minimal dashboard (build plan 2A step 4): just the user's saved quizzes —
 // title, status, continue editing. No stats/analytics yet. Enough to prove
 // persistence and give a landing spot after auth.
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ auth?: string; upgraded?: string }>;
+}) {
+  const { auth, upgraded } = await searchParams;
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login?next=/dashboard");
+  // Guest sessions (anonymous sign-in) see their own quizzes here, Jotform
+  // style — but the quizzes live only in this browser until they convert.
+  const isGuest = user.is_anonymous === true;
+  // ?auth=1 = the rate-limit funnel: a guest hit the daily cap, their prompt
+  // is stashed client-side, and signup is mandatory. next="/building" replays
+  // the stashed prompt with a progress widget the moment they're a real
+  // account, then opens the editor.
+  const showAuthOverlay = isGuest && auth === "1";
 
   const { data } = await supabase
     .from("quizzes")
@@ -36,84 +59,87 @@ export default async function DashboardPage() {
     leadCounts.set(qid, (leadCounts.get(qid) ?? 0) + 1);
   }
 
+  // Plan surface (§5.9): badge, trial countdown, billing entry point, and the
+  // monthly leads meter. Soft cap only — leads are never blocked.
+  let plan: Plan = "free";
+  let monthlyLeads = 0;
+  let cap = leadSoftCap("free");
+  if (!isGuest) {
+    const profile = await fetchPlanProfile(supabase, user.id);
+    plan = effectivePlan(profile);
+    cap = leadSoftCap(plan);
+    const { count } = await supabase
+      .from("leads")
+      .select("id", { count: "exact", head: true })
+      .gte("created_at", monthStartIso());
+    monthlyLeads = count ?? 0;
+    if (plan === "free" && monthlyLeads >= cap) {
+      // Instrumentation: a free account is bumping the soft cap.
+      await supabase.from("builder_events").insert({
+        owner_id: user.id,
+        event_type: "paywall_hit",
+        metadata: { trigger: "lead_cap" },
+      });
+    }
+  }
+  const planLabel = plan === "pro" ? "Pro" : plan === "growth" ? "Growth" : "Free";
+  const isPaid = plan === "pro" || plan === "growth";
+  const atCap = plan === "free" && monthlyLeads >= cap;
+  const quizCards: QuizCard[] = quizzes.map((q) => ({
+    ...q,
+    leads: leadCounts.get(q.id) ?? 0,
+  }));
+
   return (
-    <main className="mx-auto max-w-3xl px-5 py-12 sm:px-8">
-      <header className="mb-8 flex items-baseline justify-between">
-        <div>
-          <p className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--muted)]">
-            Funnelform · your quizzes
-          </p>
-          <h1 className="mt-2 text-3xl font-extrabold tracking-tight">Dashboard</h1>
-          <p className="mt-1 text-sm text-[var(--muted)]">{user.email}</p>
-        </div>
-        <form action="/auth/signout" method="post">
-          <button
-            type="submit"
-            className="rounded-full border border-[var(--hairline)] px-4 py-2 text-xs font-semibold transition-colors hover:border-[var(--signal)] hover:text-[var(--signal)]"
-          >
-            Sign out
-          </button>
-        </form>
+    <div className="min-h-svh">
+      {/* Single top bar — brand left, account cluster right. Mobile-first: the
+          email + plan badge fold away on small screens, but Upgrade (conversion)
+          and Sign out always stay visible. */}
+      <header className="flex items-center justify-between gap-3 border-b border-[var(--hairline)] px-4 py-3 sm:px-6">
+        <Link href="/" className="text-lg font-extrabold tracking-tight text-ink-950">
+          Funnelform
+        </Link>
+
+        <AccountMenu
+          email={user.email ?? null}
+          isGuest={isGuest}
+          isPaid={isPaid}
+          planLabel={planLabel}
+        />
       </header>
 
-      <Link
-        href="/"
-        className="inline-block rounded-full bg-[var(--foreground)] px-6 py-3 text-xs font-bold uppercase tracking-[0.1em] text-white transition-colors hover:bg-[var(--signal)]"
-      >
-        + New quiz
-      </Link>
+      <main className="mx-auto w-full max-w-5xl px-5 py-10 sm:px-8">
+        {upgraded === "1" && (
+          <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+            <p className="font-semibold">You&rsquo;re on Pro now.</p>
+            <p className="mt-1">
+              Branding controls, full analytics, and unlimited live quizzes are unlocked. It can
+              take a few seconds for the upgrade to show up here.
+            </p>
+          </div>
+        )}
 
-      {quizzes.length === 0 ? (
-        <p className="mt-8 rounded-2xl border border-dashed border-[var(--hairline)] p-6 text-sm text-[var(--muted)]">
-          No quizzes yet. Generate one and save it. It’ll show up here.
-        </p>
-      ) : (
-        <ul className="mt-8 space-y-3">
-          {quizzes.map((q) => {
-            const leads = leadCounts.get(q.id) ?? 0;
-            return (
-              <li
-                key={q.id}
-                className="flex flex-col gap-3 rounded-2xl bg-white p-4 shadow-soft ring-1 ring-ink-950/5 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div>
-                  <p className="font-semibold">{q.title ?? "Untitled quiz"}</p>
-                  <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-[var(--muted)]">
-                    {q.status} · {new Date(q.created_at).toLocaleDateString()} ·{" "}
-                    <span className="text-[var(--foreground)]">{leads} lead{leads === 1 ? "" : "s"}</span>
-                  </p>
-                  {q.status === "published" && q.slug && (
-                    <a
-                      href={`/q/${q.slug}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mt-1 block break-all text-xs text-[var(--signal)] underline underline-offset-4"
-                    >
-                      /q/{q.slug}
-                    </a>
-                  )}
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  {leads > 0 && (
-                    <Link
-                      href={`/leads/${q.id}`}
-                      className="rounded-full border border-[var(--hairline)] px-4 py-2 text-xs font-semibold transition-colors hover:border-[var(--signal)] hover:text-[var(--signal)]"
-                    >
-                      View leads
-                    </Link>
-                  )}
-                  <Link
-                    href={`/edit/${q.id}`}
-                    className="rounded-full border border-[var(--hairline)] px-4 py-2 text-xs font-semibold transition-colors hover:border-[var(--signal)] hover:text-[var(--signal)]"
-                  >
-                    Edit →
-                  </Link>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+        {isGuest && (
+          <div className="mb-6 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">
+            <p className="font-semibold">You’re in guest mode.</p>
+            <p className="mt-1">
+              Your quizzes are saved to this browser only. Create a free account to keep them
+              everywhere, publish, and collect leads.
+            </p>
+          </div>
+        )}
+
+        <WorkspaceQuizzes quizzes={quizCards} meter={isGuest ? null : { used: monthlyLeads, cap, atCap }} />
+      </main>
+
+      {showAuthOverlay && (
+        <AuthOverlay
+          next="/building"
+          mode="convert"
+          title="Create your free account"
+          subtitle="Sign up and we'll build the quiz you just asked for, automatically."
+        />
       )}
-    </main>
+    </div>
   );
 }

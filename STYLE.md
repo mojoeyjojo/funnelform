@@ -246,6 +246,15 @@ Beyond the marketing components above, these app surfaces use the same token sys
 - The ONLY place our brand appears: the **"Made with [Product]"** watermark on free-tier quizzes, using our `signal-600` wordmark, small and unobtrusive, linking back to us. Removed on paid tiers.
 - Reason: a med spa's quiz must feel like the med spa, not like us. Our aesthetic sells the tool; the customer's aesthetic sells their service.
 
+**Player UX law (evidence-backed, conversion research; see `docs/design-pass.md` §5 for sources). These are requirements, not suggestions:**
+
+1. **One question per screen.** Exactly one question per view with a clear advance action. Never a scrolling list, never a multi-question page.
+2. **Question order is sacred.** Easy questions first, qualifying later, contact capture LAST (at its configured placement, before results by default). No contact field ever appears before the capture step. The mechanism is foot-in-the-door: commitment through low-friction taps before the ask.
+3. **Lead capture is 2 fields maximum.** Email (required) + phone (optional). Hard ceiling, enforced in the player render regardless of config. The GDPR consent checkbox is a legal control, not a field, and does not count. If more qualification data is ever needed, it becomes a quiz question (feels like value), never a form field (feels like cost).
+4. **Progress = step count first.** "Question 3 of 6" in Geist Mono is the primary indicator. Any visual bar is hairline-subtle, secondary (below the count), and never shows 0% on question 1 (fill by current step, not completed steps).
+5. **Mobile-first, strictly.** Design at mobile width and adapt up; most traffic arrives via shared links on phones. Full-width tappable option cards, generous touch targets, no hover-dependent affordances, SSR with lean client JS.
+6. **Welcome screen surfaces the effort cost.** The start screen shows question count + a concrete time estimate as a designed element ("6 questions · about 60 seconds") with a single Start action. The `start` event fires on that tap.
+
 ### Voice / microcopy
 
 Warm, confident, and practical — not cosmic or mystical. The user is a busy business owner (med spa, coach, agency) who wants leads, not a ritual. Speak plainly, in the second person, with quiet confidence that the hard work is already done for them. Optimistic and encouraging, never hypey or salesy.

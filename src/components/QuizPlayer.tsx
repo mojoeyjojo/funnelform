@@ -42,7 +42,12 @@ export default function QuizPlayer({
     window.localStorage.setItem("ff_visitor_session", sessionId.current);
   }
 
-  function fireEvent(event_type: string, question_id?: string, once?: string) {
+  function fireEvent(
+    event_type: string,
+    question_id?: string,
+    once?: string,
+    outcome_id?: string,
+  ) {
     if (once) {
       if (fired.current.has(once)) return;
       fired.current.add(once);
@@ -50,7 +55,13 @@ export default function QuizPlayer({
     fetch("/api/quiz-events", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ quiz_id: quizId, event_type, question_id, session_id: sessionId.current }),
+      body: JSON.stringify({
+        quiz_id: quizId,
+        event_type,
+        question_id,
+        session_id: sessionId.current,
+        outcome_id,
+      }),
     }).catch(() => {});
   }
 
@@ -60,11 +71,14 @@ export default function QuizPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Compute the outcome from accumulated tag scores vs each outcome's match_logic.
-  const outcome = useMemo(() => {
+  // Compute the outcome from accumulated tag scores vs each outcome's
+  // match_logic. Extracted so `answer()` can resolve the outcome for the FINAL
+  // answer set before React state has caught up (the `completed` event carries
+  // outcome_id for the §5.8 outcome-distribution analytics).
+  function resolveOutcome(answerSet: Record<string, string>) {
     const tally: Record<string, number> = {};
     for (const q of questions) {
-      const chosen = answers[q.id];
+      const chosen = answerSet[q.id];
       const opt = q.options.find((o) => o.id === chosen);
       if (!opt) continue;
       for (const [tag, pts] of Object.entries(opt.score)) {
@@ -80,15 +94,19 @@ export default function QuizPlayer({
     const pool = qualifying.length > 0 ? qualifying : scored;
     pool.sort((a, b) => b.score - a.score);
     return pool[0]?.outcome ?? config.outcomes[0];
-  }, [answers, questions, config.outcomes]);
+  }
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const outcome = useMemo(() => resolveOutcome(answers), [answers, questions, config.outcomes]);
 
   function answer(questionId: string, optionId: string) {
     fireEvent("start", undefined, "start");
-    setAnswers((prev) => ({ ...prev, [questionId]: optionId }));
+    const nextAnswers = { ...answers, [questionId]: optionId };
+    setAnswers(nextAnswers);
     fireEvent("question_answered", questionId);
     const isLast = qIndex >= questions.length - 1;
     if (isLast) {
-      fireEvent("completed", undefined, "completed");
+      fireEvent("completed", undefined, "completed", resolveOutcome(nextAnswers)?.id);
       setPhase(placement === "before_results" ? "lead" : "outcome");
     } else {
       setQIndex((i) => i + 1);

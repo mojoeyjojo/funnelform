@@ -3,6 +3,8 @@
 Phase 1 (the URL/description → schema-valid quiz magic moment + instrumentation) is **done and at its gate**. Phase 2 turns the bare skeleton into a real product. This doc covers **Sub-phase 2A: Auth + Persistence (the foundation)** in detail, and sketches what comes immediately after.
 
 > **Source of truth:** `docs/mvp-build-spec.md` (architecture), `docs/mvp-goal.md` (the five claims), `STYLE.md` (visual system), `supabase/migrations/0001_init.sql` (the data model — already created, Phase 2 just starts writing to it).
+>
+> **2026-06-13:** the final Phase 2 item (the design/UX pass) is specced in `docs/design-pass.md`, which reconciles an externally-written stage brief against the shipped state (design round 1, monetization, mandatory-signup funnel). Read that doc, not the external brief.
 
 ---
 

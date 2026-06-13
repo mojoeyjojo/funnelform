@@ -98,6 +98,7 @@ source_url      text                      -- the URL it was generated from
 business_context text                     -- scraped/typed business description
 config          jsonb                     -- full quiz structure (see 3a)
 branding_enabled boolean default true     -- watermark on/off (free tier forced true)
+theme_accent    text                      -- owner's brand color for the player (nullable; migration 0005, see docs/design-pass.md §2.4)
 lead_capture    jsonb                     -- {placement, headline, sub, button, fields[]}
 delivery        jsonb                     -- {email_integration, whatsapp_number, notify_email}
 published_at    timestamptz
@@ -258,12 +259,14 @@ Publish flow priority: show the hosted link first ("Your quiz is live — here's
 ### 5.5 Quiz player (`/q/[slug]`)
 - Server-rendered, fast, mobile-first (most traffic is mobile, especially LATAM and WhatsApp-shared).
 - **Renderer is schema-driven:** selects rendering logic by `config.schema_version` so old quizzes never break when the schema evolves.
-- Renders questions → lead capture (placement per config) → outcome page with recommendations + CTA.
-- Fires `quiz_events` (view, start, question_answered, completed, lead_captured).
+- Renders welcome screen → questions → lead capture (placement per config) → outcome page with recommendations + CTA.
+- Fires `quiz_events` (view, start, question_answered, completed, lead_captured). `view` on mount; `start` on the welcome screen's Start tap (a deliberate intent signal, not the first answer).
 - Free-tier quizzes show "Made with [App]" watermark linking back to your site (the distribution/viral mechanic — on for free, off for paid).
+- **Six evidence-backed UX requirements (binding; full text in STYLE.md §6a "Player UX law", decisions + sources in `docs/design-pass.md`):** (1) exactly one question per screen; (2) question order sacred, contact capture last; (3) lead form 2 fields max (email + optional phone; GDPR consent checkbox excepted), enforced in the render regardless of config; (4) progress as a step count ("3 of 6", Geist Mono) with any bar hairline-subtle and secondary, never 0% on Q1; (5) mobile-first strictly; (6) welcome screen shows question count + time estimate ("6 questions · about 60 seconds").
+- **Owner theming:** accent color via `quizzes.theme_accent` (applied to progress, selected answers, Start/submit/CTA buttons, with a contrast guard for button text); neutral ink default when unset. Logo upload is deferred post-launch (needs storage + abuse surface).
 
 ### 5.6 Lead capture + delivery
-- Lead form: email (required) + phone (optional). Placement (before/after results) per config.
+- Lead form: email (required) + phone (optional). Placement (before/after results) per config. **2 fields is a hard ceiling** (conversion research shows a completion cliff as field count grows); the GDPR consent checkbox (§8) does not count against it. Any future qualification data becomes a quiz question, never a third form field.
 - On submit: write `lead` row, then deliver via configured channels:
   - **Email integration (native):** push to Kit / ActiveCampaign / Mailchimp / Kajabi / HubSpot with outcome as a tag/field.
   - **WhatsApp delivery (NO API):** (a) results page shows a "Continue on WhatsApp" CTA = `wa.me` click-to-chat to the BUSINESS number, prefilled with their outcome; (b) owner notification when a lead completes — via email always, plus optional Twilio WhatsApp/SMS ping to owner (later sub-phase).
@@ -337,6 +340,8 @@ This is the single most important acquisition surface and the main test of Claim
 ---
 
 ## 7. Routing Map
+
+> **Amended 2026-06-13 (`docs/design-pass.md` §2.1):** the `/` hero IS the live generator (the value-first magic moment + mandatory-signup funnel run there); the marketing page grows downward from it. The `/app/*` prefix below is NOT being adopted: owner surfaces live at `/dashboard`, `/edit/[id]`, `/analytics/[id]`, `/leads/[id]`, and migrating them is URL churn (auth redirects, Stripe success URLs, email deep links) with no user value. The map below is otherwise the target.
 
 ```
 (marketing)
@@ -439,7 +444,7 @@ Use the uploaded `STYLE.md` (Odeun "luminous twilight") as the visual source of 
 
 - **Marketing/landing pages:** full twilight aesthetic — gradient "sky" sections, glass pills, heavy Geist headings (weight and size for emphasis, no serif accent), indigo-tinted shadows, atmospheric motion (respect `prefers-reduced-motion`).
 - **App dashboard:** lighter touch — keep ink-indigo structure, glass surfaces, pill buttons, `signal-600` for primary actions. Prioritize clarity over atmosphere; less motion.
-- **Quiz player (`/q/[slug]`):** must adopt the BUSINESS's accent color + logo, not your brand. Default to a clean, glass-pill, ink-indigo neutral that the owner can lightly theme. The watermark "Made with [App]" uses your signal-600 wordmark.
+- **Quiz player (`/q/[slug]`):** must adopt the BUSINESS's accent color (logo deferred post-launch), not your brand. Default to a clean, glass-pill, ink-indigo neutral that the owner can lightly theme. The watermark "Made with [App]" uses your signal-600 wordmark. The six binding player UX requirements live in STYLE.md §6a ("Player UX law") and §5.5; the design-pass work list is `docs/design-pass.md`.
 - **Tokens to reuse verbatim:** ink scale (`#0a0f2e`→`#f3f4ff`), `signal-600 #3834ff` as the single action color, `radius-pill 999px` for buttons/inputs/badges, `radius-card 22px` for media/large surfaces, glass utilities with the inset top-highlight, `shadow-soft`/`shadow-float`.
 - **Type:** Geist (all UI/body/headings), Geist Mono (numeric/stat labels). No serif, no italic accent — hierarchy by weight and size. Hero H1 800 weight, `-0.04em`, `0.98` leading.
 - **Voice:** warm, second-person, founder-intimate (per STYLE.md §6). Microcopy examples: "Paste your link. Watch the funnel build itself." / "Your quiz is live." / "First lead just landed."

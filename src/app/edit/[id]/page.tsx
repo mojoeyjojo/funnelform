@@ -1,7 +1,9 @@
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { QuizConfigSchema } from "@/lib/schema";
+import { effectivePlan, fetchPlanProfile, hasProFeatures } from "@/lib/plan";
 import EditQuizClient from "@/components/EditQuizClient";
+import AuthOverlay from "@/components/AuthOverlay";
 
 export const runtime = "nodejs";
 
@@ -19,7 +21,7 @@ export default async function EditPage({
 
   const { data } = await supabase
     .from("quizzes")
-    .select("id, title, config, status, slug, delivery")
+    .select("id, title, config, status, slug, delivery, branding_enabled")
     .eq("id", id)
     .maybeSingle();
 
@@ -44,15 +46,36 @@ export default async function EditPage({
 
   const initialWhatsapp =
     (data.delivery as { whatsapp?: string } | null)?.whatsapp ?? "";
+  const isGuest = user.is_anonymous === true;
+
+  // Plan drives the branding-toggle card (Pro feature, §5.9). The watermark
+  // itself is enforced server-side in /q/[slug]; this is just honest UI.
+  const plan = effectivePlan(await fetchPlanProfile(supabase, user.id));
 
   return (
-    <EditQuizClient
-      id={data.id}
-      initialTitle={data.title ?? ""}
-      initialConfig={parsed.data}
-      initialStatus={data.status ?? "draft"}
-      initialSlug={data.slug ?? null}
-      initialWhatsapp={initialWhatsapp}
-    />
+    <>
+      <EditQuizClient
+        id={data.id}
+        initialTitle={data.title ?? ""}
+        initialConfig={parsed.data}
+        initialStatus={data.status ?? "draft"}
+        initialSlug={data.slug ?? null}
+        initialWhatsapp={initialWhatsapp}
+        initialBranding={data.branding_enabled !== false}
+        hasPro={hasProFeatures(plan)}
+        isGuest={isGuest}
+      />
+      {/* Editing is account-walled: guests see their quiz behind a mandatory
+          signup overlay. Converting links an identity to the SAME user, so the
+          quiz is still theirs when the overlay clears. */}
+      {isGuest && (
+        <AuthOverlay
+          next={`/edit/${data.id}`}
+          mode="convert"
+          title="Your quiz is ready"
+          subtitle="Sign up free to edit it, publish it, and collect leads."
+        />
+      )}
+    </>
   );
 }

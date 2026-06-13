@@ -1,15 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { GeneratedQuiz, QuizConfig } from "@/lib/schema";
+import type { OutputRating } from "@/lib/types";
 import { QuizView } from "./QuizView";
 
 type SaveState = "clean" | "dirty" | "saving" | "saved" | "error";
-type PublishState = "idle" | "publishing" | "published" | "blocked" | "error";
+type PublishState = "idle" | "publishing" | "published" | "blocked" | "plan_blocked" | "error";
 
-// Saved-quiz editor. Reuses the shared QuizView (no rating here). Persistence is
-// an explicit Save (PATCH) — not per-keystroke autosave — per the build plan.
+// Saved-quiz editor. Persistence is an explicit Save (PATCH) — not
+// per-keystroke autosave — per the build plan. Just-generated quizzes arrive
+// with ?new=1&sid=<session> and show the one-tap first-impression rating
+// (output_rating instrumentation, moved here from the landing page).
 export default function EditQuizClient({
   id,
   initialTitle,
@@ -17,6 +20,9 @@ export default function EditQuizClient({
   initialStatus,
   initialSlug,
   initialWhatsapp,
+  initialBranding,
+  hasPro,
+  isGuest,
 }: {
   id: string;
   initialTitle: string;
@@ -24,15 +30,45 @@ export default function EditQuizClient({
   initialStatus: string;
   initialSlug: string | null;
   initialWhatsapp: string;
+  initialBranding: boolean;
+  hasPro: boolean;
+  isGuest: boolean;
 }) {
   const [quiz, setQuiz] = useState<GeneratedQuiz>({ title: initialTitle, config: initialConfig });
   const [whatsapp, setWhatsapp] = useState(initialWhatsapp);
+  const [branding, setBranding] = useState(initialBranding);
   const [state, setState] = useState<SaveState>("clean");
   const [publishState, setPublishState] = useState<PublishState>(
     initialStatus === "published" ? "published" : "idle",
   );
   const [slug, setSlug] = useState<string | null>(initialSlug);
   const [blockedOutcomes, setBlockedOutcomes] = useState<string[]>([]);
+
+  // First-impression rating, only for just-generated quizzes (?new=1).
+  const [ratingSession, setRatingSession] = useState<string | null>(null);
+  const [rating, setRating] = useState<OutputRating | null>(null);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("new") === "1") setRatingSession(params.get("sid") ?? "unknown");
+  }, []);
+
+  async function recordRating(r: OutputRating) {
+    if (rating) return;
+    setRating(r);
+    try {
+      await fetch("/api/events", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: ratingSession ?? "unknown",
+          eventType: "output_rating",
+          metadata: { rating: r },
+        }),
+      });
+    } catch {
+      // instrumentation must never block the UI
+    }
+  }
 
   function editField(path: string, mutate: (draft: GeneratedQuiz) => void) {
     setQuiz((prev) => {
@@ -48,13 +84,25 @@ export default function EditQuizClient({
     setState("dirty");
   }
 
+  function editBranding(showBadge: boolean) {
+    setBranding(showBadge);
+    setState("dirty");
+  }
+
   async function save(): Promise<boolean> {
     setState("saving");
     try {
       const res = await fetch(`/api/quizzes/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: quiz.title, config: quiz.config, whatsapp }),
+        body: JSON.stringify({
+          title: quiz.title,
+          config: quiz.config,
+          whatsapp,
+          // Only Pro can flip this; free accounts never send it, so a save
+          // can't 403 on the branding gate.
+          ...(hasPro ? { branding_enabled: branding } : {}),
+        }),
       });
       setState(res.ok ? "saved" : "error");
       return res.ok;
@@ -67,6 +115,12 @@ export default function EditQuizClient({
   // Save any pending edits first (the publish gate validates the SAVED config),
   // then publish. Surfaces the CTA-URL validation block inline.
   async function publish() {
+    // Defense in depth: the edit page already walls guests behind the signup
+    // overlay, but if state is stale, route them to convert anyway.
+    if (isGuest) {
+      window.location.href = "/login?next=" + encodeURIComponent(`/edit/${id}`);
+      return;
+    }
     setPublishState("publishing");
     setBlockedOutcomes([]);
     if (state === "dirty" || state === "error") {
@@ -82,9 +136,15 @@ export default function EditQuizClient({
       if (res.ok) {
         setSlug(data.slug);
         setPublishState("published");
+      } else if (data.reason === "guest") {
+        // Server-side guest gate (in case the client state was stale).
+        window.location.href = "/login?next=" + encodeURIComponent(`/edit/${id}`);
       } else if (data.reason === "missing_cta_url") {
         setBlockedOutcomes((data.outcomes ?? []).map((o: { name: string }) => o.name));
         setPublishState("blocked");
+      } else if (data.reason === "plan_limit") {
+        // Free plan: one live quiz. Upgrade prompt instead of a dead end.
+        setPublishState("plan_blocked");
       } else {
         setPublishState("error");
       }
@@ -102,7 +162,7 @@ export default function EditQuizClient({
           href="/dashboard"
           className="text-xs font-semibold text-[var(--muted)] underline underline-offset-4 hover:text-[var(--signal)]"
         >
-          ← Dashboard
+          ← Workspace
         </Link>
         <div className="flex items-center gap-3">
           {state === "saved" && <span className="text-xs text-emerald-600">Saved.</span>}
@@ -153,6 +213,21 @@ export default function EditQuizClient({
           </p>
         </div>
       )}
+      {publishState === "plan_blocked" && (
+        <div className="mb-6 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">
+          <p className="font-semibold">The free plan includes one live quiz.</p>
+          <p className="mt-1">
+            You already have a quiz live. Upgrade to Pro to publish as many as you like, or
+            unpublish the other one first.
+          </p>
+          <Link
+            href="/pricing"
+            className="mt-3 inline-block rounded-full bg-ink-950 px-5 py-2.5 text-xs font-bold uppercase tracking-[0.1em] text-white transition-all hover:bg-signal-600 active:scale-[0.98]"
+          >
+            See Pro →
+          </Link>
+        </div>
+      )}
       {publishState === "error" && (
         <p className="mb-6 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
           Couldn’t publish just now. Please try again.
@@ -176,7 +251,46 @@ export default function EditQuizClient({
         />
       </div>
 
-      <QuizView quiz={quiz} onEdit={editField} />
+      {/* Branding (§5.9): removing the "Made with Funnelform" badge is Pro.
+          The player enforces the watermark server-side for free owners, so
+          this card is honest UI, not the security boundary. */}
+      <div className="mb-8 rounded-2xl border border-[var(--hairline)] p-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold">Funnelform branding</p>
+            <p className="mt-1 text-xs text-[var(--muted)]">
+              {hasPro
+                ? "Hide the “Made with Funnelform” badge on your published quiz."
+                : "Removing the “Made with Funnelform” badge is a Pro feature."}
+            </p>
+          </div>
+          {hasPro ? (
+            <label className="flex shrink-0 cursor-pointer items-center gap-2 text-xs font-semibold">
+              <input
+                type="checkbox"
+                checked={!branding}
+                onChange={(e) => editBranding(!e.target.checked)}
+                className="h-4 w-4 accent-[var(--signal)]"
+              />
+              Remove badge
+            </label>
+          ) : (
+            <Link
+              href="/pricing"
+              className="shrink-0 rounded-full border border-[var(--hairline)] px-4 py-2 text-xs font-semibold transition-colors hover:border-[var(--signal)] hover:text-[var(--signal)]"
+            >
+              Upgrade to Pro
+            </Link>
+          )}
+        </div>
+      </div>
+
+      <QuizView
+        quiz={quiz}
+        onEdit={editField}
+        rating={ratingSession ? rating : undefined}
+        onRate={ratingSession ? recordRating : undefined}
+      />
     </main>
   );
 }

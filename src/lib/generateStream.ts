@@ -7,11 +7,16 @@ import {
   wordCount,
 } from "./jina";
 import { recordBuilderEvent } from "./events";
-import type { BuilderEventType, GenerateStreamEvent } from "./types";
+import { isGoal, type BuilderEventType, type GenerateStreamEvent } from "./types";
 
 export type GenerateBody = {
   input?: string; // URL or one-line description
   description?: { whatYouDo?: string; whoYouServe?: string; mainOffer?: string };
+  // Goal chosen before generation (steers prompt weighting). Validated here.
+  goal?: string;
+  // Pre-scraped markdown from /api/extract (Flow A) so we skip a redundant Jina
+  // fetch and stay inside the generation time budget. Falls back to scraping.
+  siteContent?: string;
 };
 
 export const NDJSON_HEADERS = {
@@ -42,8 +47,10 @@ export function createGenerateStream({
       const send = (evt: GenerateStreamEvent) =>
         controller.enqueue(encoder.encode(JSON.stringify(evt) + "\n"));
 
+      const goal = isGoal(body.goal) ? body.goal : undefined;
+
       try {
-        await record("generate_started");
+        await record("generate_started", { goal });
 
         // --- Resolve business context (scrape, description, or fallback) ---
         let businessContext: string;
@@ -67,11 +74,17 @@ export function createGenerateStream({
 
           if (looksLikeUrl(input)) {
             const url = normalizeUrl(input);
-            let markdown = "";
-            try {
-              markdown = await fetchSiteMarkdown(url);
-            } catch {
-              markdown = ""; // treat fetch failure as a thin site -> fallback form
+            // Fast path: reuse the markdown /api/extract already scraped (Flow A)
+            // rather than fetching the same page twice. Only re-scrape if it's
+            // missing or too thin (e.g. the anon free-tool path, which has no
+            // extraction step).
+            let markdown = (body.siteContent ?? "").trim();
+            if (wordCount(markdown) < THIN_SITE_WORD_THRESHOLD) {
+              try {
+                markdown = await fetchSiteMarkdown(url);
+              } catch {
+                markdown = ""; // treat fetch failure as a thin site -> fallback form
+              }
             }
             if (wordCount(markdown) < THIN_SITE_WORD_THRESHOLD) {
               await record("thin_site_fallback_shown", { url });
@@ -87,7 +100,7 @@ export function createGenerateStream({
 
         // --- Generate + strictly validate (one retry inside generateQuiz) ---
         send({ type: "stage", stage: "writing" });
-        const { quiz, attempts } = await generateQuiz(businessContext);
+        const { quiz, attempts } = await generateQuiz(businessContext, goal);
 
         send({ type: "stage", stage: "validating" });
         await record("generate_succeeded", { attempts, retried: attempts > 1 });
