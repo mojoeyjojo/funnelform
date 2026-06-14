@@ -11,6 +11,7 @@ import "server-only";
 type OwnerNotification = {
   ownerEmail: string;
   quizTitle: string;
+  leadName?: string | null;
   leadEmail: string;
   leadPhone?: string | null;
   outcomeName?: string | null;
@@ -87,9 +88,12 @@ export async function sendOwnerLeadNotification(n: OwnerNotification): Promise<b
     return false;
   }
 
-  const subject = `New lead on "${n.quizTitle}"`;
+  const subject = n.leadName
+    ? `New lead: ${n.leadName} on "${n.quizTitle}"`
+    : `New lead on "${n.quizTitle}"`;
   const lines = [
-    `<p><strong>${escapeHtml(n.leadEmail)}</strong> just completed your quiz.</p>`,
+    `<p><strong>${escapeHtml(n.leadName || n.leadEmail)}</strong> just completed your quiz.</p>`,
+    n.leadName ? `<p>Email: ${escapeHtml(n.leadEmail)}</p>` : "",
     n.outcomeName ? `<p>Result: <strong>${escapeHtml(n.outcomeName)}</strong></p>` : "",
     n.leadPhone ? `<p>Phone: ${escapeHtml(n.leadPhone)}</p>` : "",
     `<p><a href="${escapeHtml(n.leadsUrl)}">View all your leads →</a></p>`,

@@ -11,6 +11,9 @@ export const runtime = "nodejs";
 // `lead_captured` quiz_event. Delivery to the owner's channel is Phase 3.
 const LeadSchema = z.object({
   quiz_id: z.string().uuid(),
+  // Optional server-side so a missing name never rejects a captured lead; the
+  // player form asks for it (and requires it) for personalised follow-up.
+  name: z.string().max(100).optional(),
   email: z.string().email(),
   phone: z.string().max(40).optional(),
   answers: z.record(z.string(), z.string()),
@@ -31,7 +34,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid lead", details: parsed.error.flatten() }, { status: 422 });
   }
 
-  const { quiz_id, email, phone, answers, outcome_id, session_id } = parsed.data;
+  const { quiz_id, name, email, phone, answers, outcome_id, session_id } = parsed.data;
+  const cleanName = name?.trim() || null;
 
   try {
     const admin = createSupabaseAdminClient();
@@ -49,6 +53,7 @@ export async function POST(request: Request) {
     const { error } = await admin.from("leads").insert({
       quiz_id,
       owner_id: quiz.owner_id,
+      name: cleanName,
       email,
       phone: phone ?? null,
       answers,
@@ -80,6 +85,7 @@ export async function POST(request: Request) {
         const sent = await sendOwnerLeadNotification({
           ownerEmail: owner.email,
           quizTitle: quiz.title ?? "your quiz",
+          leadName: cleanName,
           leadEmail: email,
           leadPhone: phone ?? null,
           outcomeName,

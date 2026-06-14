@@ -6,6 +6,7 @@ export const runtime = "nodejs";
 
 type LeadRow = {
   id: string;
+  name: string | null;
   email: string | null;
   phone: string | null;
   outcome_id: string | null;
@@ -37,7 +38,7 @@ export default async function LeadsPage({
 
   const { data } = await supabase
     .from("leads")
-    .select("id, email, phone, outcome_id, created_at")
+    .select("id, name, email, phone, outcome_id, created_at")
     .eq("quiz_id", id)
     .order("created_at", { ascending: false });
   const leads = (data ?? []) as LeadRow[];
@@ -51,10 +52,22 @@ export default async function LeadsPage({
         >
           ← Workspace
         </Link>
-        <h1 className="mt-2 text-2xl font-extrabold tracking-tight">
-          Leads: {quiz?.title ?? "quiz"}
-        </h1>
-        <p className="mt-1 text-sm text-[var(--muted)]">{leads.length} captured</p>
+        <div className="mt-2 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-extrabold tracking-tight">
+              Leads: {quiz?.title ?? "quiz"}
+            </h1>
+            <p className="mt-1 text-sm text-[var(--muted)]">{leads.length} captured</p>
+          </div>
+          {leads.length > 0 && (
+            <a
+              href={`/api/leads/${id}/export`}
+              className="rounded-full border border-[var(--hairline)] px-5 py-2.5 text-xs font-bold uppercase tracking-[0.1em] transition-colors hover:border-[var(--signal)] hover:text-[var(--signal)]"
+            >
+              Download CSV
+            </a>
+          )}
+        </div>
       </header>
 
       {leads.length === 0 ? (
@@ -69,7 +82,8 @@ export default async function LeadsPage({
               className="flex items-center justify-between rounded-2xl bg-white p-4 shadow-soft ring-1 ring-ink-950/5 text-sm"
             >
               <div>
-                <p className="font-semibold">{l.email}</p>
+                {l.name && <p className="font-semibold">{l.name}</p>}
+                <p className={l.name ? "text-xs text-[var(--muted)]" : "font-semibold"}>{l.email}</p>
                 {l.phone && <p className="text-xs text-[var(--muted)]">{l.phone}</p>}
               </div>
               <div className="text-right">

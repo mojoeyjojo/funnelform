@@ -7,7 +7,14 @@ import type { OutputRating } from "@/lib/types";
 import { QuizView } from "./QuizView";
 
 type SaveState = "clean" | "dirty" | "saving" | "saved" | "error";
-type PublishState = "idle" | "publishing" | "published" | "blocked" | "plan_blocked" | "error";
+type PublishState =
+  | "idle"
+  | "publishing"
+  | "published"
+  | "unpublishing"
+  | "blocked"
+  | "plan_blocked"
+  | "error";
 
 // Saved-quiz editor. Persistence is an explicit Save (PATCH) — not
 // per-keystroke autosave — per the build plan. Just-generated quizzes arrive
@@ -139,7 +146,7 @@ export default function EditQuizClient({
       } else if (data.reason === "guest") {
         // Server-side guest gate (in case the client state was stale).
         window.location.href = "/login?next=" + encodeURIComponent(`/edit/${id}`);
-      } else if (data.reason === "missing_cta_url") {
+      } else if (data.reason === "invalid_cta_url") {
         setBlockedOutcomes((data.outcomes ?? []).map((o: { name: string }) => o.name));
         setPublishState("blocked");
       } else if (data.reason === "plan_limit") {
@@ -148,6 +155,19 @@ export default function EditQuizClient({
       } else {
         setPublishState("error");
       }
+    } catch {
+      setPublishState("error");
+    }
+  }
+
+  // Take a live quiz offline. Fully reversible: the slug, leads, and analytics
+  // are kept, so re-publishing restores the same public URL. Frees the free
+  // plan's one-live-quiz slot so a different quiz can go live.
+  async function unpublish() {
+    setPublishState("unpublishing");
+    try {
+      const res = await fetch(`/api/quizzes/${id}/publish`, { method: "DELETE" });
+      setPublishState(res.ok ? "idle" : "error");
     } catch {
       setPublishState("error");
     }
@@ -175,9 +195,18 @@ export default function EditQuizClient({
           >
             {state === "saving" ? "Saving…" : "Save changes"}
           </button>
+          {(publishState === "published" || publishState === "unpublishing") && (
+            <button
+              onClick={unpublish}
+              disabled={publishState === "unpublishing"}
+              className="rounded-full border border-[var(--hairline)] px-5 py-2.5 text-xs font-bold uppercase tracking-[0.1em] transition-colors hover:border-rose-300 hover:text-rose-700 disabled:opacity-40"
+            >
+              {publishState === "unpublishing" ? "Taking offline…" : "Unpublish"}
+            </button>
+          )}
           <button
             onClick={publish}
-            disabled={publishState === "publishing"}
+            disabled={publishState === "publishing" || publishState === "unpublishing"}
             className="rounded-full bg-[var(--foreground)] px-5 py-2.5 text-xs font-bold uppercase tracking-[0.1em] text-white transition-colors hover:bg-[var(--signal)] disabled:opacity-40"
           >
             {publishState === "publishing"
@@ -205,11 +234,11 @@ export default function EditQuizClient({
       )}
       {publishState === "blocked" && (
         <div className="mb-6 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">
-          <p className="font-semibold">Add where this button should send people.</p>
+          <p className="font-semibold">Check your button links.</p>
           <p className="mt-1">
-            Every outcome needs a CTA link before you can publish. Missing:{" "}
-            <strong>{blockedOutcomes.join(", ")}</strong>. Add a full URL (https://…) to each outcome’s
-            link field, save, and publish again.
+            A button link is optional, but if you add one it has to be a full web
+            address. Please fix: <strong>{blockedOutcomes.join(", ")}</strong>. Use a
+            full URL like https://calendly.com/you/intro-call, save, and publish again.
           </p>
         </div>
       )}

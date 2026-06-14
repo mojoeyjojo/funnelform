@@ -93,21 +93,38 @@ export function QuizView({
             <p className="mt-2 px-2 text-xs font-semibold text-[var(--muted)]">Recommends:</p>
             <div className="px-2 text-sm">{out.recommendations.join(" · ")}</div>
             {!readOnly && (
-              <div className="mt-2 flex flex-col gap-1 sm:flex-row sm:items-center">
-                <EditInput
-                  value={out.cta.label}
-                  onChange={(v) => onEdit(`outcomes.${oi}.cta.label`, (d) => (d.config.outcomes[oi].cta.label = v))}
-                  className="text-sm font-semibold"
-                />
-                <EditInput
-                  value={out.cta.url}
-                  onChange={(v) => onEdit(`outcomes.${oi}.cta.url`, (d) => (d.config.outcomes[oi].cta.url = v))}
-                  className="text-xs text-[var(--muted)]"
-                />
+              <div className="mt-3 space-y-3">
+                <div>
+                  <p className="mb-1 px-2 text-[11px] font-semibold text-[var(--muted)]">
+                    Button text
+                  </p>
+                  <EditInput
+                    value={out.cta.label}
+                    onChange={(v) => onEdit(`outcomes.${oi}.cta.label`, (d) => (d.config.outcomes[oi].cta.label = v))}
+                    className="text-sm font-semibold"
+                    placeholder="Book a call"
+                  />
+                </div>
+                <div>
+                  <p className="mb-1 px-2 text-[11px] font-semibold text-[var(--muted)]">
+                    Button link (optional)
+                  </p>
+                  <EditInput
+                    value={out.cta.url}
+                    onChange={(v) => onEdit(`outcomes.${oi}.cta.url`, (d) => (d.config.outcomes[oi].cta.url = v))}
+                    className="text-sm"
+                    placeholder="e.g. https://calendly.com/you/intro-call"
+                  />
+                  {!out.cta.url && (
+                    <p className="mt-1 px-2 text-[11px] text-[var(--muted)]">
+                      Optional. Add a destination URL to send users to after quiz
+                      completion (e.g., a booking page, Calendly or a special offer).
+                      Leave blank to only capture the lead for later follow-up in your
+                      workspace.
+                    </p>
+                  )}
+                </div>
               </div>
-            )}
-            {!readOnly && !out.cta.url && (
-              <p className="px-2 text-[11px] text-amber-600">Add where this button should send people.</p>
             )}
           </div>
         ))}
@@ -168,29 +185,41 @@ export function EditInput({
   className = "",
   multiline = false,
   readOnly = false,
+  placeholder,
 }: {
   value: string;
   onChange: (v: string) => void;
   className?: string;
   multiline?: boolean;
   readOnly?: boolean;
+  placeholder?: string;
 }) {
   if (readOnly) {
     return (
       <div className={`px-2 py-1 ${multiline ? "whitespace-pre-wrap " : ""}${className}`}>{value}</div>
     );
   }
+  // Every editable field carries a fixed hairline border so it reads as
+  // editable at a glance (not only on hover); hover darkens it, focus turns it
+  // into the signal accent. Placeholder text stays light grey so it's clearly a
+  // hint, not a value.
   const base =
-    "w-full rounded-lg border border-transparent bg-transparent px-2 py-1 outline-none hover:border-[var(--hairline)] focus:border-[var(--signal)]";
+    "w-full rounded-lg border border-[var(--hairline)] bg-white/40 px-2 py-1 outline-none transition-colors placeholder:text-[#888a8b] hover:border-ink-300 focus:border-[var(--signal)]";
   return multiline ? (
     <textarea
       value={value}
       onChange={(e) => onChange(e.target.value)}
       rows={2}
+      placeholder={placeholder}
       className={`${base} resize-none ${className}`}
     />
   ) : (
-    <input value={value} onChange={(e) => onChange(e.target.value)} className={`${base} ${className}`} />
+    <input
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      className={`${base} ${className}`}
+    />
   );
 }
 

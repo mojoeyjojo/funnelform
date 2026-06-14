@@ -113,6 +113,14 @@ export default function AccountMenu({
 
               <div className="my-1 h-px bg-[var(--hairline)]" />
 
+              <Link
+                href="/auth/reset"
+                role="menuitem"
+                className="block w-full rounded-lg px-3 py-2 text-left text-sm text-ink-700 transition-colors hover:bg-ink-50"
+              >
+                Change password
+              </Link>
+
               <form action="/auth/signout" method="post">
                 <button
                   type="submit"

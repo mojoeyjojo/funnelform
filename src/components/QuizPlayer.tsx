@@ -206,6 +206,10 @@ function QuestionStep({
   );
 }
 
+// Mirrors the server's email check (Zod `.email()`) so the visitor gets an
+// instant, specific message instead of a round-trip to a generic error.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 function LeadForm({
   quizId,
   answers,
@@ -219,6 +223,7 @@ function LeadForm({
   sessionId: string;
   onDone: () => void;
 }) {
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [consent, setConsent] = useState(false);
@@ -227,7 +232,25 @@ function LeadForm({
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!email.trim() || !consent) return;
+    const trimmedName = name.trim();
+    const trimmedEmail = email.trim();
+    // Validate before any network call, and say exactly what's wrong.
+    if (!trimmedName) {
+      setError("Please enter your name so we know what to call you.");
+      return;
+    }
+    if (!trimmedEmail) {
+      setError("Please enter your email so we can send your results.");
+      return;
+    }
+    if (!EMAIL_RE.test(trimmedEmail)) {
+      setError("That email address doesn't look right. Please check it, like you@example.com.");
+      return;
+    }
+    if (!consent) {
+      setError("Please tick the box to agree to be contacted, then try again.");
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -236,7 +259,8 @@ function LeadForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           quiz_id: quizId,
-          email: email.trim(),
+          name: trimmedName,
+          email: trimmedEmail,
           phone: phone.trim() || undefined,
           answers,
           outcome_id: outcomeId,
@@ -244,10 +268,20 @@ function LeadForm({
           consent: true,
         }),
       });
-      if (res.ok) onDone();
-      else setError("Something went wrong. Please try again.");
+      if (res.ok) {
+        onDone();
+        return;
+      }
+      // Map the server's status to a specific, human message.
+      if (res.status === 422) {
+        setError("That email address doesn't look right. Please check it, like you@example.com.");
+      } else if (res.status === 404) {
+        setError("This quiz isn't accepting responses right now. Please try again later.");
+      } else {
+        setError("We couldn't save your details just now. Please try again in a moment.");
+      }
     } catch {
-      setError("Something went wrong. Please try again.");
+      setError("We couldn't reach the server. Please check your connection and try again.");
     } finally {
       setLoading(false);
     }
@@ -262,9 +296,23 @@ function LeadForm({
         <p className="mt-1 text-sm text-ink-500">Enter your email to see your result.</p>
       </div>
       <input
+        type="text"
+        value={name}
+        onChange={(e) => {
+          setName(e.target.value);
+          if (error) setError(null);
+        }}
+        placeholder="Your name"
+        autoComplete="given-name"
+        className="w-full rounded-full border border-ink-200 px-5 py-3.5 text-[15px] outline-none transition-colors focus:border-signal-600"
+      />
+      <input
         type="email"
         value={email}
-        onChange={(e) => setEmail(e.target.value)}
+        onChange={(e) => {
+          setEmail(e.target.value);
+          if (error) setError(null);
+        }}
         placeholder="you@email.com"
         className="w-full rounded-full border border-ink-200 px-5 py-3.5 text-[15px] outline-none transition-colors focus:border-signal-600"
       />
@@ -287,7 +335,7 @@ function LeadForm({
       {error && <p className="text-xs text-rose-700">{error}</p>}
       <button
         type="submit"
-        disabled={loading || !email.trim() || !consent}
+        disabled={loading || !name.trim() || !email.trim() || !consent}
         className="w-full rounded-full bg-ink-950 px-6 py-3.5 text-xs font-bold uppercase tracking-[0.1em] text-white shadow-pill transition-all hover:bg-signal-600 active:scale-[0.98] disabled:opacity-40"
       >
         {loading ? "…" : "See my result →"}
