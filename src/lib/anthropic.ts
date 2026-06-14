@@ -315,3 +315,127 @@ export async function extractSiteFacts(markdown: string, goal: Goal): Promise<Si
     },
   };
 }
+
+// =============================================================================
+// Single-item regeneration (build spec §5.3, the "give me another take" reroll).
+// A cheap Haiku call that rewrites only the COPY of one question or one outcome.
+// The hidden scoring logic (option tags/score, outcome match_logic, cta.url) is
+// NEVER touched here — the caller keeps those fields and only swaps the wording,
+// so the funnel stays consistent. Each function returns copy only.
+
+function textOf(res: Anthropic.Message): string {
+  return res.content
+    .filter((b): b is Anthropic.TextBlock => b.type === "text")
+    .map((b) => b.text)
+    .join("");
+}
+
+const REGEN_QUESTION_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["text", "options"],
+  properties: {
+    text: { type: "string" },
+    options: { type: "array", items: { type: "string" } },
+  },
+} as const;
+
+/**
+ * Reword ONE question: a fresh question text and fresh answer labels in the SAME
+ * order. The position of each answer must be preserved because the option's
+ * tags/score (kept by the caller) wire it to outcomes. Returns labels by index;
+ * the caller maps optionLabels[i] onto the existing option i.
+ */
+export async function regenerateQuestion(
+  context: string,
+  question: { text: string; options: { label: string; tags: string[] }[] },
+): Promise<{ text: string; optionLabels: string[] }> {
+  const client = new Anthropic();
+  const optionsDesc = question.options
+    .map((o, i) => `${i + 1}. "${o.label}" (keep this answer's meaning: ${o.tags.join(", ")})`)
+    .join("\n");
+  const system = `You rewrite ONE quiz question for a lead-generation quiz, giving a fresh take on the wording. Rules:
+- Return a new question "text" and exactly ${question.options.length} answer "options", in the SAME order as given.
+- Each new option must keep the SAME meaning as the original in that position, because hidden scoring depends on the order. Reword for freshness; never change which answer maps to what.
+- Conversational, second-person, tight. Do not number the options or add letters. Never mention other tools.`;
+  const user = `Business context:\n${context}\n\nCurrent question: "${question.text}"\nCurrent answers (order must be preserved):\n${optionsDesc}`;
+
+  const res = await client.messages.create({
+    model: EXTRACT_MODEL,
+    max_tokens: 700,
+    thinking: { type: "disabled" },
+    output_config: { format: { type: "json_schema", schema: REGEN_QUESTION_SCHEMA } },
+    system,
+    messages: [{ role: "user", content: user }],
+  });
+
+  const parsed = JSON.parse(textOf(res)) as { text?: unknown; options?: unknown };
+  const newText =
+    typeof parsed.text === "string" && parsed.text.trim() ? parsed.text.trim() : question.text;
+  const optionLabels = Array.isArray(parsed.options)
+    ? parsed.options.filter((s): s is string => typeof s === "string" && s.trim().length > 0)
+    : [];
+  return { text: newText, optionLabels };
+}
+
+const REGEN_OUTCOME_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["name", "description", "recommendations", "cta_label"],
+  properties: {
+    name: { type: "string" },
+    description: { type: "string" },
+    recommendations: { type: "array", items: { type: "string" } },
+    cta_label: { type: "string" },
+  },
+} as const;
+
+/**
+ * Reword ONE outcome: a fresh name, one-sentence description, 2-3 recommendation
+ * lines, and a CTA label. match_logic and cta.url are NOT returned — the caller
+ * keeps them so the answer-to-outcome wiring and booking link are preserved.
+ */
+export async function regenerateOutcome(
+  context: string,
+  outcome: { name: string; description: string; recommendations: string[]; ctaLabel: string },
+): Promise<{ name: string; description: string; recommendations: string[]; ctaLabel: string }> {
+  const client = new Anthropic();
+  const system = `You rewrite ONE quiz result (outcome) for a lead-generation quiz, giving a fresh take. Rules:
+- "name": an identity-driven result name (e.g. "The Glow Getter"), never "Type A".
+- "description": ONE sentence, max ~25 words.
+- "recommendations": 2-3 of the business's ACTUAL offerings named with the EXACT wording from the context. Do not invent or rebrand. If the context names none, reuse the originals.
+- "cta_label": a clear, action-oriented button label.
+Keep it tight and on-brand. Never mention other tools.`;
+  const user = `Business context:\n${context}\n\nCurrent result:\nName: "${outcome.name}"\nDescription: "${outcome.description}"\nRecommendations: ${outcome.recommendations.join(" | ")}\nButton label: "${outcome.ctaLabel}"`;
+
+  const res = await client.messages.create({
+    model: EXTRACT_MODEL,
+    max_tokens: 600,
+    thinking: { type: "disabled" },
+    output_config: { format: { type: "json_schema", schema: REGEN_OUTCOME_SCHEMA } },
+    system,
+    messages: [{ role: "user", content: user }],
+  });
+
+  const parsed = JSON.parse(textOf(res)) as {
+    name?: unknown;
+    description?: unknown;
+    recommendations?: unknown;
+    cta_label?: unknown;
+  };
+  const recs = Array.isArray(parsed.recommendations)
+    ? parsed.recommendations.filter((s): s is string => typeof s === "string" && s.trim().length > 0)
+    : [];
+  return {
+    name: typeof parsed.name === "string" && parsed.name.trim() ? parsed.name.trim() : outcome.name,
+    description:
+      typeof parsed.description === "string" && parsed.description.trim()
+        ? parsed.description.trim()
+        : outcome.description,
+    recommendations: recs.length > 0 ? recs : outcome.recommendations,
+    ctaLabel:
+      typeof parsed.cta_label === "string" && parsed.cta_label.trim()
+        ? parsed.cta_label.trim()
+        : outcome.ctaLabel,
+  };
+}

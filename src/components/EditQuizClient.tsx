@@ -106,6 +106,47 @@ export default function EditQuizClient({
     setState("dirty");
   }
 
+  // §5.3 reroll: fetch fresh COPY for one question/outcome and merge it onto the
+  // existing item, keeping the hidden logic (option ids/tags/score, outcome
+  // match_logic, cta.url) untouched. Marks dirty so the change is saved like any
+  // edit. Throws on failure so the button can surface it.
+  async function regenerate(target: "question" | "outcome", index: number) {
+    const res = await fetch(`/api/quizzes/${id}/regenerate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target, index }),
+    });
+    if (!res.ok) throw new Error("regenerate_failed");
+    const data = await res.json();
+    setQuiz((prev) => {
+      const draft: GeneratedQuiz = structuredClone(prev);
+      if (target === "question") {
+        const q = draft.config.questions[index];
+        if (q) {
+          if (typeof data.text === "string" && data.text) q.text = data.text;
+          const labels: unknown = data.optionLabels;
+          if (Array.isArray(labels)) {
+            q.options.forEach((opt, i) => {
+              if (typeof labels[i] === "string" && labels[i]) opt.label = labels[i];
+            });
+          }
+        }
+      } else {
+        const o = draft.config.outcomes[index];
+        if (o) {
+          if (typeof data.name === "string" && data.name) o.name = data.name;
+          if (typeof data.description === "string" && data.description) o.description = data.description;
+          if (Array.isArray(data.recommendations) && data.recommendations.length > 0) {
+            o.recommendations = data.recommendations.filter((r: unknown) => typeof r === "string");
+          }
+          if (typeof data.ctaLabel === "string" && data.ctaLabel) o.cta.label = data.ctaLabel;
+        }
+      }
+      return draft;
+    });
+    setState("dirty");
+  }
+
   async function save(): Promise<boolean> {
     setState("saving");
     try {
@@ -257,6 +298,7 @@ export default function EditQuizClient({
           >
             {playerUrl}
           </a>
+          <EmbedSnippet url={playerUrl} title={quiz.title} />
         </div>
       )}
       {publishState === "blocked" && (
@@ -376,6 +418,7 @@ export default function EditQuizClient({
       <QuizView
         quiz={quiz}
         onEdit={editField}
+        onRegenerate={regenerate}
         rating={ratingSession ? rating : undefined}
         onRate={ratingSession ? recordRating : undefined}
       />
@@ -417,5 +460,51 @@ export default function EditQuizClient({
         )}
       </div>
     </main>
+  );
+}
+
+// Secondary publish option (§5.4): an iframe of the hosted player the owner can
+// paste into their own site. Plain iframe on purpose, no injected script, so it
+// is bulletproof across WordPress / Webflow / Squarespace / Wix. Fixed height
+// with internal scroll keeps it predictable without a resize handshake.
+function EmbedSnippet({ url, title }: { url: string; title: string }) {
+  const [copied, setCopied] = useState(false);
+  const safeTitle = (title || "Quiz").replace(/"/g, "'");
+  const snippet = `<iframe src="${url}" title="${safeTitle}" loading="lazy" style="width:100%;height:760px;border:0;border-radius:16px"></iframe>`;
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(snippet);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // clipboard blocked — the field is selectable as a fallback
+    }
+  }
+
+  return (
+    <div className="mt-4 border-t border-emerald-200/70 pt-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm font-semibold text-emerald-800">Want it on your own site?</p>
+        <button
+          type="button"
+          onClick={copy}
+          className="shrink-0 rounded-full border border-emerald-300 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.08em] text-emerald-800 transition-colors hover:bg-emerald-100"
+        >
+          {copied ? "Copied" : "Copy code"}
+        </button>
+      </div>
+      <p className="mt-1 text-xs text-emerald-700">
+        Paste this where you want the quiz to appear. Works on WordPress, Webflow, Squarespace, Wix,
+        and most site builders.
+      </p>
+      <textarea
+        readOnly
+        value={snippet}
+        rows={3}
+        onClick={(e) => e.currentTarget.select()}
+        className="mt-2 w-full resize-none rounded-lg border border-emerald-200 bg-white p-3 font-mono text-[11px] leading-relaxed text-ink-700 outline-none"
+      />
+    </div>
   );
 }

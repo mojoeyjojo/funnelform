@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type { GeneratedQuiz } from "@/lib/schema";
 import type { OutputRating } from "@/lib/types";
 
@@ -11,12 +12,14 @@ export function QuizView({
   rating,
   onRate,
   onEdit,
+  onRegenerate,
   readOnly = false,
 }: {
   quiz: GeneratedQuiz;
   rating?: OutputRating | null;
   onRate?: (r: OutputRating) => void;
   onEdit: (path: string, mutate: (draft: GeneratedQuiz) => void) => void;
+  onRegenerate?: (target: "question" | "outcome", index: number) => Promise<void>;
   readOnly?: boolean;
 }) {
   const { config } = quiz;
@@ -43,6 +46,11 @@ export function QuizView({
         <Label>Questions ({config.questions.length})</Label>
         {config.questions.map((q, qi) => (
           <div key={q.id} className="rounded-2xl border border-[var(--hairline)] p-4">
+            {onRegenerate && !readOnly && (
+              <div className="mb-2 flex justify-end">
+                <RegenButton onRun={() => onRegenerate("question", qi)} />
+              </div>
+            )}
             <EditInput
               value={q.text}
               onChange={(v) => onEdit(`questions.${qi}.text`, (d) => (d.config.questions[qi].text = v))}
@@ -74,6 +82,11 @@ export function QuizView({
         <Label>Scored outcomes ({config.outcomes.length})</Label>
         {config.outcomes.map((out, oi) => (
           <div key={out.id} className="rounded-2xl border border-[var(--hairline)] p-4">
+            {onRegenerate && !readOnly && (
+              <div className="mb-2 flex justify-end">
+                <RegenButton onRun={() => onRegenerate("outcome", oi)} />
+              </div>
+            )}
             <EditInput
               value={out.name}
               onChange={(v) => onEdit(`outcomes.${oi}.name`, (d) => (d.config.outcomes[oi].name = v))}
@@ -220,6 +233,34 @@ export function EditInput({
       placeholder={placeholder}
       className={`${base} ${className}`}
     />
+  );
+}
+
+// "Give me another take" reroll for a single question/outcome (§5.3). Manages
+// its own loading + error so the rest of the editor stays responsive. The actual
+// AI call + logic-preserving merge live in EditQuizClient.regenerate.
+function RegenButton({ onRun }: { onRun: () => Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={async () => {
+        setBusy(true);
+        setFailed(false);
+        try {
+          await onRun();
+        } catch {
+          setFailed(true);
+        } finally {
+          setBusy(false);
+        }
+      }}
+      className="inline-flex items-center gap-1.5 rounded-full border border-[var(--hairline)] px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--muted)] transition-colors hover:border-[var(--signal)] hover:text-[var(--signal)] disabled:opacity-50"
+    >
+      {busy ? "Regenerating…" : failed ? "Failed, retry" : "↻ Regenerate"}
+    </button>
   );
 }
 
