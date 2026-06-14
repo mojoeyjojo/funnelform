@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 
 // The quiz list for the Workspace, with a tiles/list view toggle on the header
 // row. The owner's preference persists in localStorage. Data is fetched + RLS-
@@ -20,17 +21,16 @@ export type QuizCard = {
 type View = "tiles" | "list";
 const VIEW_KEY = "ff_quiz_view";
 
-const BTN =
-  "rounded-full border border-[var(--hairline)] px-4 py-2 text-xs font-semibold transition-colors hover:border-[var(--signal)] hover:text-[var(--signal)]";
-
 export type LeadsMeter = { used: number; cap: number; atCap: boolean };
 
 export default function WorkspaceQuizzes({
   quizzes,
   meter,
+  deletedCount,
 }: {
   quizzes: QuizCard[];
   meter: LeadsMeter | null;
+  deletedCount: number;
 }) {
   const [view, setView] = useState<View>("tiles");
 
@@ -94,6 +94,15 @@ export default function WorkspaceQuizzes({
         </p>
       )}
 
+      {deletedCount > 0 && (
+        <Link
+          href="/deleted"
+          className="mt-3 inline-block text-xs font-semibold text-[var(--muted)] underline underline-offset-4 hover:text-[var(--signal)]"
+        >
+          Recently deleted ({deletedCount})
+        </Link>
+      )}
+
       {quizzes.length === 0 ? (
         <p className="mt-8 rounded-2xl border border-dashed border-[var(--hairline)] p-6 text-sm text-[var(--muted)]">
           No quizzes yet. Generate one and save it. It’ll show up here.
@@ -103,14 +112,14 @@ export default function WorkspaceQuizzes({
           {quizzes.map((q) => (
             <div
               key={q.id}
-              className="flex flex-col justify-between gap-4 rounded-2xl bg-white p-4 shadow-soft ring-1 ring-ink-950/5"
+              className="flex items-start justify-between gap-2 rounded-2xl bg-white p-4 shadow-soft ring-1 ring-ink-950/5"
             >
-              <div>
+              <div className="min-w-0">
                 <p className="font-semibold">{q.title ?? "Untitled quiz"}</p>
                 <Meta q={q} />
                 <PublicLink q={q} />
               </div>
-              <Actions q={q} />
+              <QuizActionsMenu q={q} />
             </div>
           ))}
         </div>
@@ -119,14 +128,14 @@ export default function WorkspaceQuizzes({
           {quizzes.map((q) => (
             <li
               key={q.id}
-              className="flex flex-col gap-3 rounded-2xl bg-white p-4 shadow-soft ring-1 ring-ink-950/5 sm:flex-row sm:items-center sm:justify-between"
+              className="flex items-start justify-between gap-2 rounded-2xl bg-white p-4 shadow-soft ring-1 ring-ink-950/5"
             >
-              <div>
+              <div className="min-w-0">
                 <p className="font-semibold">{q.title ?? "Untitled quiz"}</p>
                 <Meta q={q} />
                 <PublicLink q={q} />
               </div>
-              <Actions q={q} />
+              <QuizActionsMenu q={q} />
             </li>
           ))}
         </ul>
@@ -160,23 +169,136 @@ function PublicLink({ q }: { q: QuizCard }) {
   );
 }
 
-function Actions({ q }: { q: QuizCard }) {
+// Per-quiz actions, collapsed into a "..." kebab popup (room to grow as we add
+// more actions). Delete is a two-step confirm inside the menu, then a soft-
+// delete request + a server refresh so the card drops out of the list.
+function QuizActionsMenu({ q }: { q: QuizCard }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function close() {
+      setOpen(false);
+      setConfirming(false);
+    }
+    function onDown(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) close();
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") close();
+    }
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  async function del() {
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/quizzes/${q.id}`, { method: "DELETE" });
+      if (res.ok) {
+        setOpen(false);
+        router.refresh();
+      } else {
+        setBusy(false);
+      }
+    } catch {
+      setBusy(false);
+    }
+  }
+
+  const item =
+    "block w-full rounded-lg px-3 py-2 text-left text-sm text-ink-700 transition-colors hover:bg-ink-50";
+
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-2">
-      {q.status === "published" && (
-        <Link href={`/analytics/${q.id}`} className={BTN}>
-          Analytics
-        </Link>
+    <div ref={ref} className="relative shrink-0">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="Quiz actions"
+        className="flex h-9 w-9 items-center justify-center rounded-full text-[var(--muted)] transition-colors hover:bg-ink-100 hover:text-[var(--foreground)]"
+      >
+        <DotsIcon />
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 z-50 mt-1 w-52 max-w-[calc(100vw-2rem)] origin-top-right rounded-2xl border border-[var(--hairline)] bg-white p-2 shadow-float"
+        >
+          {confirming ? (
+            <div className="p-1">
+              <p className="px-2 py-1 text-xs leading-relaxed text-ink-600">
+                Delete this quiz? It moves to Recently deleted for 30 days, then it&rsquo;s gone for
+                good. Leads are kept until then.
+              </p>
+              <div className="mt-1 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setConfirming(false)}
+                  disabled={busy}
+                  className="flex-1 rounded-lg border border-[var(--hairline)] px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-ink-50 disabled:opacity-40"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={del}
+                  disabled={busy}
+                  className="flex-1 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-rose-700 disabled:opacity-40"
+                >
+                  {busy ? "…" : "Delete"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              {q.status === "published" && (
+                <Link href={`/analytics/${q.id}`} role="menuitem" className={item}>
+                  Analytics
+                </Link>
+              )}
+              {q.leads > 0 && (
+                <Link href={`/leads/${q.id}`} role="menuitem" className={item}>
+                  View leads
+                </Link>
+              )}
+              <Link href={`/edit/${q.id}`} role="menuitem" className={item}>
+                Edit
+              </Link>
+              <div className="my-1 h-px bg-[var(--hairline)]" />
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => setConfirming(true)}
+                className="block w-full rounded-lg px-3 py-2 text-left text-sm text-rose-700 transition-colors hover:bg-rose-50"
+              >
+                Delete
+              </button>
+            </>
+          )}
+        </div>
       )}
-      {q.leads > 0 && (
-        <Link href={`/leads/${q.id}`} className={BTN}>
-          View leads
-        </Link>
-      )}
-      <Link href={`/edit/${q.id}`} className={BTN}>
-        Edit →
-      </Link>
     </div>
+  );
+}
+
+function DotsIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor" aria-hidden>
+      <circle cx="9" cy="3.5" r="1.6" />
+      <circle cx="9" cy="9" r="1.6" />
+      <circle cx="9" cy="14.5" r="1.6" />
+    </svg>
   );
 }
 

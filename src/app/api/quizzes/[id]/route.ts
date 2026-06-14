@@ -126,3 +126,33 @@ export async function GET(
   }
   return NextResponse.json({ quiz: data });
 }
+
+// DELETE /api/quizzes/[id] — soft delete. Stamps deleted_at, which drops the
+// quiz from the workspace and takes it offline (player + lead capture filter on
+// deleted_at), but the row and its leads survive a 30-day grace period (see the
+// purge cron) so an accidental delete is recoverable. RLS scopes this to owner.
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
+  const now = new Date().toISOString();
+  const { error } = await supabase
+    .from("quizzes")
+    .update({ deleted_at: now, updated_at: now })
+    .eq("id", id)
+    .is("deleted_at", null);
+  if (error) {
+    console.error("[quizzes] soft delete failed:", error.message);
+    return NextResponse.json({ error: "Could not delete quiz" }, { status: 500 });
+  }
+  return NextResponse.json({ ok: true });
+}

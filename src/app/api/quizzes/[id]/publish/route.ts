@@ -60,6 +60,7 @@ export async function POST(
     .from("quizzes")
     .select("id, title, slug, status, config")
     .eq("id", id)
+    .is("deleted_at", null)
     .maybeSingle();
   if (!quiz) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -76,6 +77,7 @@ export async function POST(
         .from("quizzes")
         .select("id", { count: "exact", head: true })
         .eq("status", "published")
+        .is("deleted_at", null)
         .neq("id", id);
       if ((count ?? 0) >= 1) {
         await supabase.from("builder_events").insert({

@@ -48,8 +48,16 @@ export default async function DashboardPage({
   const { data } = await supabase
     .from("quizzes")
     .select("id, title, status, slug, created_at")
+    .is("deleted_at", null)
     .order("created_at", { ascending: false });
   const quizzes = (data ?? []) as QuizRow[];
+
+  // How many quizzes are in the 30-day trash (surfaced as a "Recently deleted"
+  // link so the owner can restore or grab leads before they're purged).
+  const { count: deletedCount } = await supabase
+    .from("quizzes")
+    .select("id", { count: "exact", head: true })
+    .not("deleted_at", "is", null);
 
   // Lead counts per quiz (RLS returns only this owner's leads).
   const { data: leadRows } = await supabase.from("leads").select("quiz_id");
@@ -129,7 +137,11 @@ export default async function DashboardPage({
           </div>
         )}
 
-        <WorkspaceQuizzes quizzes={quizCards} meter={isGuest ? null : { used: monthlyLeads, cap, atCap }} />
+        <WorkspaceQuizzes
+          quizzes={quizCards}
+          meter={isGuest ? null : { used: monthlyLeads, cap, atCap }}
+          deletedCount={deletedCount ?? 0}
+        />
       </main>
 
       {showAuthOverlay && (

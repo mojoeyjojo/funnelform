@@ -22,6 +22,7 @@ export default async function PlayerPage({
     .select("id, owner_id, title, config, branding_enabled, lead_capture, delivery, status")
     .eq("slug", slug)
     .eq("status", "published")
+    .is("deleted_at", null)
     .maybeSingle();
 
   if (!quiz) notFound();

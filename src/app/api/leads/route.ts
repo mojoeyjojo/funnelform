@@ -45,6 +45,7 @@ export async function POST(request: Request) {
       .from("quizzes")
       .select("owner_id, status, title, config")
       .eq("id", quiz_id)
+      .is("deleted_at", null)
       .maybeSingle();
     if (!quiz || quiz.status !== "published") {
       return NextResponse.json({ error: "Quiz not available" }, { status: 404 });

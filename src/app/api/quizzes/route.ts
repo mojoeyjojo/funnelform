@@ -77,6 +77,7 @@ export async function GET() {
   const { data, error } = await supabase
     .from("quizzes")
     .select("id, title, status, slug, created_at, updated_at")
+    .is("deleted_at", null)
     .order("created_at", { ascending: false });
 
   if (error) {

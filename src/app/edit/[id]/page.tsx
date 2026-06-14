@@ -23,6 +23,7 @@ export default async function EditPage({
     .from("quizzes")
     .select("id, title, config, status, slug, delivery, branding_enabled")
     .eq("id", id)
+    .is("deleted_at", null)
     .maybeSingle();
 
   if (!data) {

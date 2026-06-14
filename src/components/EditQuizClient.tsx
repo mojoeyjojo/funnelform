@@ -50,6 +50,8 @@ export default function EditQuizClient({
   );
   const [slug, setSlug] = useState<string | null>(initialSlug);
   const [blockedOutcomes, setBlockedOutcomes] = useState<string[]>([]);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // First-impression rating, only for just-generated quizzes (?new=1).
   const [ratingSession, setRatingSession] = useState<string | null>(null);
@@ -170,6 +172,22 @@ export default function EditQuizClient({
       setPublishState(res.ok ? "idle" : "error");
     } catch {
       setPublishState("error");
+    }
+  }
+
+  // Soft delete: the quiz moves to Recently deleted (30-day grace) and the owner
+  // lands back in the workspace. Reversible from /deleted until the purge cron.
+  async function deleteQuiz() {
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/quizzes/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        window.location.href = "/dashboard";
+      } else {
+        setDeleting(false);
+      }
+    } catch {
+      setDeleting(false);
     }
   }
 
@@ -320,6 +338,43 @@ export default function EditQuizClient({
         rating={ratingSession ? rating : undefined}
         onRate={ratingSession ? recordRating : undefined}
       />
+
+      <div className="mt-12 border-t border-[var(--hairline)] pt-6">
+        {confirmDelete ? (
+          <div className="flex flex-col gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-rose-800">
+              Delete this quiz? It moves to Recently deleted for 30 days, then it&rsquo;s gone for
+              good. Your leads are kept until then.
+            </p>
+            <div className="flex shrink-0 gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(false)}
+                disabled={deleting}
+                className="rounded-full border border-[var(--hairline)] bg-white px-4 py-2 text-xs font-bold uppercase tracking-[0.1em] transition-colors hover:bg-ink-50 disabled:opacity-40"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={deleteQuiz}
+                disabled={deleting}
+                className="rounded-full bg-rose-600 px-4 py-2 text-xs font-bold uppercase tracking-[0.1em] text-white transition-colors hover:bg-rose-700 disabled:opacity-40"
+              >
+                {deleting ? "Deleting…" : "Delete quiz"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setConfirmDelete(true)}
+            className="text-xs font-semibold text-rose-700 underline underline-offset-4 transition-colors hover:text-rose-800"
+          >
+            Delete this quiz
+          </button>
+        )}
+      </div>
     </main>
   );
 }
