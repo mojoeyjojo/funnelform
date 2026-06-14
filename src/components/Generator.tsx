@@ -13,6 +13,7 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { saveQuizAsCurrentUser, newQuizEditorUrl } from "@/lib/saveQuiz";
 import { funnelToSignup } from "@/lib/pendingPrompt";
 import { Label } from "./QuizView";
+import MarketingBody from "./MarketingBody";
 
 // The pre-generation entry flow is a small in-place card stepper. We collect the
 // user's GOAL and business context BEFORE firing the AI pipeline, because the
@@ -514,6 +515,10 @@ export default function Generator({ inApp = false }: { inApp?: boolean } = {}) {
           </StepCard>
         </div>
       </section>
+
+      {/* Marketing body grows downward from the hero on `/` — idle state only,
+          and never in the in-app builder (design-pass §2.1). */}
+      {!inApp && step === "entry" && <MarketingBody />}
 
       {debug && (
         <section className="mx-auto max-w-3xl px-5 pb-20 sm:px-8">
