@@ -105,7 +105,7 @@ export default async function DashboardPage({
           and Sign out always stay visible. */}
       <header className="flex items-center justify-between gap-3 border-b border-[var(--hairline)] px-4 py-3 sm:px-6">
         <Link href="/" className="text-lg font-extrabold tracking-tight text-ink-950">
-          Funnelform
+          Treeflow
         </Link>
 
         <AccountMenu

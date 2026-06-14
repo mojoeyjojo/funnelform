@@ -307,17 +307,17 @@ export default function EditQuizClient({
         />
       </div>
 
-      {/* Branding (§5.9): removing the "Made with Funnelform" badge is Pro.
+      {/* Branding (§5.9): removing the "Made with Treeflow" badge is Pro.
           The player enforces the watermark server-side for free owners, so
           this card is honest UI, not the security boundary. */}
       <div className="mb-8 rounded-2xl border border-[var(--hairline)] p-4">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-sm font-semibold">Funnelform branding</p>
+            <p className="text-sm font-semibold">Treeflow branding</p>
             <p className="mt-1 text-xs text-[var(--muted)]">
               {hasPro
-                ? "Hide the “Made with Funnelform” badge on your published quiz."
-                : "Removing the “Made with Funnelform” badge is a Pro feature."}
+                ? "Hide the “Made with Treeflow” badge on your published quiz."
+                : "Removing the “Made with Treeflow” badge is a Pro feature."}
             </p>
           </div>
           {hasPro ? (

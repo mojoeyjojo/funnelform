@@ -75,7 +75,7 @@ export async function PATCH(
       });
       return NextResponse.json(
         {
-          error: "Removing Funnelform branding is a Pro feature.",
+          error: "Removing Treeflow branding is a Pro feature.",
           reason: "plan_required",
         },
         { status: 403 },

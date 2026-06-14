@@ -398,7 +398,7 @@ export default function Generator({ inApp = false }: { inApp?: boolean } = {}) {
         {/* Topbar — wordmark + flow badge (left), progress dots + auth (right) */}
         <nav className="absolute inset-x-0 top-0 z-10 mx-auto flex w-full max-w-5xl items-center justify-between px-5 pt-6 sm:px-8">
           <div className="flex items-center gap-3">
-            <span className="text-lg font-extrabold tracking-tight text-ink-950">Funnelform</span>
+            <span className="text-lg font-extrabold tracking-tight text-ink-950">Treeflow</span>
             {flow && <FlowBadge flow={flow} />}
           </div>
           <div className="flex items-center gap-4">

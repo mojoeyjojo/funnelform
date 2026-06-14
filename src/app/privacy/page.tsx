@@ -1,8 +1,8 @@
 import Link from "next/link";
 
 export const metadata = {
-  title: "Privacy Policy — Funnelform",
-  description: "How Funnelform collects, uses, and protects personal data.",
+  title: "Privacy Policy · Treeflow",
+  description: "How Treeflow collects, uses, and protects personal data.",
 };
 
 // Static privacy policy. Written against the real stack and data flows (Supabase,
@@ -32,7 +32,7 @@ export default function PrivacyPage() {
         <div className="mt-10 space-y-10 text-[15px] leading-relaxed text-ink-700">
           <Section title="Who we are">
             <p>
-              Funnelform is an AI tool that helps business owners build quiz funnels, publish them,
+              Treeflow is an AI tool that helps business owners build quiz funnels, publish them,
               and collect leads. This policy explains what personal data we handle, why, and the
               choices you have. If you have any questions, contact us at{" "}
               <a className="text-signal-600 underline underline-offset-4" href="mailto:emails@odune.nl">
@@ -44,13 +44,13 @@ export default function PrivacyPage() {
 
           <Section title="Two kinds of data, two roles">
             <p>
-              <strong>Your account data.</strong> When you sign up and use Funnelform, we are the
+              <strong>Your account data.</strong> When you sign up and use Treeflow, we are the
               data controller for your account and the quizzes you create.
             </p>
             <p className="mt-3">
               <strong>Your quiz respondents&rsquo; data.</strong> When someone takes a quiz you
               published and submits their details, you (the quiz owner) are the data controller for
-              those leads. Funnelform acts as a processor on your behalf: we store and deliver that
+              those leads. Treeflow acts as a processor on your behalf: we store and deliver that
               data to you, but it is yours, and you are responsible for how you contact those people
               and for the consent text shown on your quiz.
             </p>
@@ -105,27 +105,27 @@ export default function PrivacyPage() {
             </p>
             <ul className="mt-3 list-disc space-y-2 pl-5">
               <li>
-                <strong>Supabase</strong> — database, authentication, and storage.
+                <strong>Supabase</strong>: database, authentication, and storage.
               </li>
               <li>
-                <strong>Vercel</strong> — application hosting and delivery.
+                <strong>Vercel</strong>: application hosting and delivery.
               </li>
               <li>
-                <strong>Stripe</strong> — subscription payments.
+                <strong>Stripe</strong>: subscription payments.
               </li>
               <li>
-                <strong>Resend</strong> — transactional email (such as lead notifications).
+                <strong>Resend</strong>: transactional email (such as lead notifications).
               </li>
               <li>
-                <strong>Anthropic</strong> — the AI model that generates your quiz from the website
+                <strong>Anthropic</strong>: the AI model that generates your quiz from the website
                 content or description you provide. We do not send your respondents&rsquo; lead data
                 to the model.
               </li>
               <li>
-                <strong>Jina</strong> — reads the public website URL you submit so the AI can use it.
+                <strong>Jina</strong>: reads the public website URL you submit so the AI can use it.
               </li>
               <li>
-                <strong>Google</strong> — only if you choose to sign in with Google.
+                <strong>Google</strong>: only if you choose to sign in with Google.
               </li>
             </ul>
           </Section>
@@ -185,7 +185,7 @@ export default function PrivacyPage() {
 
           <Section title="Children">
             <p>
-              Funnelform is not intended for children, and we do not knowingly collect personal data
+              Treeflow is not intended for children, and we do not knowingly collect personal data
               from anyone under 16.
             </p>
           </Section>

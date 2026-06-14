@@ -5,7 +5,7 @@ import FreeTool from "@/components/FreeTool";
 // instrument. Public, indexable, SEO-targeted. The interactive flow is the
 // FreeTool client component.
 export const metadata: Metadata = {
-  title: "Free AI Quiz Generator — turn your website into a lead quiz | Funnelform",
+  title: "Free AI Quiz Generator — turn your website into a lead quiz | Treeflow",
   description:
     "Paste your URL and get a complete, publishable lead-generation quiz funnel in seconds. Questions, scored outcomes, and a follow-up sequence, written for your business. Free to try.",
   alternates: { canonical: "/tools/ai-quiz-generator" },

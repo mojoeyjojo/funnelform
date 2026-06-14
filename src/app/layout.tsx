@@ -7,7 +7,7 @@ import TransferCompleter from "@/components/TransferCompleter";
 // Type system: Geist for all UI text (variable weight, covers 400–900) and
 // Geist Mono for technical / numeric labels. One family, no serif, no accent.
 export const metadata: Metadata = {
-  title: "Funnelform: turn your website into a lead-generating quiz",
+  title: "Treeflow: turn your website into a lead-generating quiz",
   description:
     "Paste your link. Watch the funnel build itself. AI turns your site into a complete, publishable quiz funnel in seconds.",
 };

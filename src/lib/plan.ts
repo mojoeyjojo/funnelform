@@ -34,7 +34,7 @@ export function hasProFeatures(plan: Plan): boolean {
   return plan === "trial" || plan === "pro" || plan === "growth";
 }
 
-// Lead soft caps (§5.9): DISPLAY ONLY. Funnelform never blocks a lead from
+// Lead soft caps (§5.9): DISPLAY ONLY. Treeflow never blocks a lead from
 // being captured — the cap is a usage meter that nudges toward upgrading.
 export function leadSoftCap(plan: Plan): number {
   return hasProFeatures(plan) ? 1000 : 100;

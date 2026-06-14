@@ -231,7 +231,7 @@ export default function MarketingBody() {
       {/* Footer */}
       <footer className="border-t border-[var(--hairline)]">
         <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-4 px-5 py-10 sm:flex-row sm:px-8">
-          <span className="text-lg font-extrabold tracking-tight text-ink-950">Funnelform</span>
+          <span className="text-lg font-extrabold tracking-tight text-ink-950">Treeflow</span>
           <nav className="flex items-center gap-6 text-sm text-ink-600">
             <Link href="/pricing" className="transition-colors hover:text-signal-600">
               Pricing
@@ -247,7 +247,7 @@ export default function MarketingBody() {
             </a>
           </nav>
           <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-ink-400">
-            © 2026 Funnelform
+            © 2026 Treeflow
           </span>
         </div>
       </footer>

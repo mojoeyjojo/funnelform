@@ -54,7 +54,7 @@ export default async function PricingPage({
       <div className="mx-auto max-w-5xl">
         <header className="mb-10 text-center">
           <p className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--muted)]">
-            Funnelform · pricing
+            Treeflow · pricing
           </p>
           <h1 className="mt-2 text-4xl font-extrabold tracking-[-0.02em]">
             Simple plans, no surprises
@@ -122,7 +122,7 @@ export default async function PricingPage({
             <ul className="mt-5 space-y-2.5">
               <Feature>Everything in Free</Feature>
               <Feature>Unlimited published quizzes</Feature>
-              <Feature>Remove Funnelform branding</Feature>
+              <Feature>Remove Treeflow branding</Feature>
               <Feature>Full analytics: drop-off by question, outcome breakdown</Feature>
               <Feature>Around 1,000 leads per month</Feature>
             </ul>
@@ -182,7 +182,7 @@ export default async function PricingPage({
             </ul>
             <div className="mt-auto pt-6">
               <a
-                href="mailto:emails@odune.nl?subject=Funnelform%20Growth"
+                href="mailto:emails@odune.nl?subject=Treeflow%20Growth"
                 className="block rounded-full border border-[var(--hairline)] px-5 py-3 text-center text-xs font-bold uppercase tracking-[0.1em] transition-colors hover:border-[var(--signal)] hover:text-[var(--signal)]"
               >
                 Contact us

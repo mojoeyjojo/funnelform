@@ -202,7 +202,7 @@ export default function QuizPlayer({
             rel="noopener noreferrer"
             className="inline-block rounded-full bg-white/70 px-3 py-1.5 text-[11px] font-semibold text-signal-600 ring-1 ring-ink-950/5 transition-colors hover:bg-white"
           >
-            Made with Funnelform
+            Made with Treeflow
           </a>
         </footer>
       )}

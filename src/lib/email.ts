@@ -5,7 +5,7 @@ import "server-only";
 // via Resend's REST API (no SDK dependency). Never throws — delivery must not
 // break lead capture; returns whether it sent so the caller can record it.
 //
-// Config: RESEND_API_KEY + RESEND_FROM (e.g. "Funnelform <leads@yourdomain>").
+// Config: RESEND_API_KEY + RESEND_FROM (e.g. "Treeflow <leads@yourdomain>").
 // No-ops (logs once) if unconfigured, so the player/lead flow runs regardless.
 
 type OwnerNotification = {
@@ -49,10 +49,10 @@ export async function sendTrialEndingReminder(r: TrialReminder): Promise<boolean
     day: "numeric",
   });
   const lines = [
-    `<p>Heads up: your Funnelform Pro trial ends on <strong>${escapeHtml(endsAt)}</strong>.</p>`,
+    `<p>Heads up: your Treeflow Pro trial ends on <strong>${escapeHtml(endsAt)}</strong>.</p>`,
     `<p>If Pro is working for you, there is nothing to do. Your ${escapeHtml(r.priceLabel)} subscription starts automatically and you keep unlimited live quizzes, full analytics, and branding control.</p>`,
     `<p>Not ready? <a href="${escapeHtml(r.manageUrl)}">Manage your billing</a> and cancel before then, and you will not be charged.</p>`,
-    `<p style="color:#6a72d6;font-size:12px">Sent by Funnelform</p>`,
+    `<p style="color:#6a72d6;font-size:12px">Sent by Treeflow</p>`,
   ];
 
   try {
@@ -65,7 +65,7 @@ export async function sendTrialEndingReminder(r: TrialReminder): Promise<boolean
       body: JSON.stringify({
         from,
         to: r.to,
-        subject: `Your Funnelform Pro trial ends on ${endsAt}`,
+        subject: `Your Treeflow Pro trial ends on ${endsAt}`,
         html: `<div style="font-family:sans-serif;font-size:15px;line-height:1.6">${lines.join("")}</div>`,
       }),
     });
@@ -97,7 +97,7 @@ export async function sendOwnerLeadNotification(n: OwnerNotification): Promise<b
     n.outcomeName ? `<p>Result: <strong>${escapeHtml(n.outcomeName)}</strong></p>` : "",
     n.leadPhone ? `<p>Phone: ${escapeHtml(n.leadPhone)}</p>` : "",
     `<p><a href="${escapeHtml(n.leadsUrl)}">View all your leads →</a></p>`,
-    `<p style="color:#6a72d6;font-size:12px">Sent by Funnelform</p>`,
+    `<p style="color:#6a72d6;font-size:12px">Sent by Treeflow</p>`,
   ].filter(Boolean);
 
   try {
