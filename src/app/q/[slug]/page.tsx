@@ -19,7 +19,7 @@ export default async function PlayerPage({
   const admin = createSupabaseAdminClient();
   const { data: quiz } = await admin
     .from("quizzes")
-    .select("id, owner_id, title, config, branding_enabled, lead_capture, delivery, status")
+    .select("id, owner_id, title, config, branding_enabled, lead_capture, delivery, status, theme_accent")
     .eq("slug", slug)
     .eq("status", "published")
     .is("deleted_at", null)
@@ -53,6 +53,7 @@ export default async function PlayerPage({
       branding={branding}
       placement={placement}
       whatsapp={whatsapp}
+      accent={(quiz.theme_accent as string | null) ?? null}
     />
   );
 }

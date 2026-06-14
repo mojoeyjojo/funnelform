@@ -28,6 +28,7 @@ export default function EditQuizClient({
   initialSlug,
   initialWhatsapp,
   initialBranding,
+  initialAccent,
   hasPro,
   isGuest,
 }: {
@@ -38,12 +39,14 @@ export default function EditQuizClient({
   initialSlug: string | null;
   initialWhatsapp: string;
   initialBranding: boolean;
+  initialAccent: string | null;
   hasPro: boolean;
   isGuest: boolean;
 }) {
   const [quiz, setQuiz] = useState<GeneratedQuiz>({ title: initialTitle, config: initialConfig });
   const [whatsapp, setWhatsapp] = useState(initialWhatsapp);
   const [branding, setBranding] = useState(initialBranding);
+  const [accent, setAccent] = useState<string | null>(initialAccent);
   const [state, setState] = useState<SaveState>("clean");
   const [publishState, setPublishState] = useState<PublishState>(
     initialStatus === "published" ? "published" : "idle",
@@ -98,6 +101,11 @@ export default function EditQuizClient({
     setState("dirty");
   }
 
+  function editAccent(value: string | null) {
+    setAccent(value);
+    setState("dirty");
+  }
+
   async function save(): Promise<boolean> {
     setState("saving");
     try {
@@ -108,6 +116,7 @@ export default function EditQuizClient({
           title: quiz.title,
           config: quiz.config,
           whatsapp,
+          theme_accent: accent,
           // Only Pro can flip this; free accounts never send it, so a save
           // can't 403 on the branding gate.
           ...(hasPro ? { branding_enabled: branding } : {}),
@@ -329,6 +338,38 @@ export default function EditQuizClient({
               Upgrade to Pro
             </Link>
           )}
+        </div>
+      </div>
+
+      {/* Brand color (design-pass §2.4): the accent applied to the published
+          player. Optional — null renders the neutral ink default. */}
+      <div className="mb-8 rounded-2xl border border-[var(--hairline)] p-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold">Brand color</p>
+            <p className="mt-1 text-xs text-[var(--muted)]">
+              Sets the accent on your published quiz (progress, selected answers, and buttons).
+              Leave it on the default for a clean neutral look.
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-3">
+            {accent && (
+              <button
+                type="button"
+                onClick={() => editAccent(null)}
+                className="text-xs font-semibold text-[var(--muted)] underline underline-offset-4 transition-colors hover:text-[var(--signal)]"
+              >
+                Reset
+              </button>
+            )}
+            <input
+              type="color"
+              value={accent ?? "#0a0a0a"}
+              onChange={(e) => editAccent(e.target.value)}
+              aria-label="Brand color"
+              className="h-9 w-9 cursor-pointer rounded-lg border border-[var(--hairline)] bg-transparent p-0.5"
+            />
+          </div>
         </div>
       </div>
 

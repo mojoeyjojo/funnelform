@@ -21,7 +21,7 @@ export default async function EditPage({
 
   const { data } = await supabase
     .from("quizzes")
-    .select("id, title, config, status, slug, delivery, branding_enabled")
+    .select("id, title, config, status, slug, delivery, branding_enabled, theme_accent")
     .eq("id", id)
     .is("deleted_at", null)
     .maybeSingle();
@@ -63,6 +63,7 @@ export default async function EditPage({
         initialSlug={data.slug ?? null}
         initialWhatsapp={initialWhatsapp}
         initialBranding={data.branding_enabled !== false}
+        initialAccent={(data.theme_accent as string | null) ?? null}
         hasPro={hasProFeatures(plan)}
         isGuest={isGuest}
       />

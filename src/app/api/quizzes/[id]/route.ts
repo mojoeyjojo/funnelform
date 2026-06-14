@@ -18,13 +18,20 @@ const UpdateQuizSchema = z
     config: QuizConfigSchema.optional(),
     whatsapp: z.string().max(32).optional(),
     branding_enabled: z.boolean().optional(),
+    // Brand color: a hex string, or null to clear back to the neutral default.
+    theme_accent: z
+      .string()
+      .regex(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/)
+      .nullable()
+      .optional(),
   })
   .refine(
     (v) =>
       v.title !== undefined ||
       v.config !== undefined ||
       v.whatsapp !== undefined ||
-      v.branding_enabled !== undefined,
+      v.branding_enabled !== undefined ||
+      v.theme_accent !== undefined,
     { message: "Nothing to update" },
   );
 
@@ -82,6 +89,7 @@ export async function PATCH(
   if (parsed.data.title !== undefined) update.title = parsed.data.title;
   if (parsed.data.config !== undefined) update.config = parsed.data.config;
   if (parsed.data.branding_enabled !== undefined) update.branding_enabled = parsed.data.branding_enabled;
+  if (parsed.data.theme_accent !== undefined) update.theme_accent = parsed.data.theme_accent;
   if (parsed.data.whatsapp !== undefined) {
     const w = parsed.data.whatsapp.trim();
     update.delivery = w ? { whatsapp: w } : {};

@@ -7,7 +7,40 @@ import type { QuizConfig } from "@/lib/schema";
 // neutral, mobile-first; the owner's surface. Fires the visitor funnel
 // (view → start → question_answered → completed → lead_captured) and captures a
 // lead before revealing the outcome (default placement).
-type Phase = "questions" | "lead" | "outcome";
+type Phase = "welcome" | "questions" | "lead" | "outcome";
+
+const DEFAULT_ACCENT = "#0a0a0a"; // neutral ink — the player is the owner's surface, not our brand
+
+// Validate + normalize the owner's stored accent (the editor color input yields
+// #rrggbb; anything malformed falls back to the neutral default).
+function normalizeAccent(value: string | null): string {
+  if (!value) return DEFAULT_ACCENT;
+  const v = value.trim();
+  return /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v) ? v : DEFAULT_ACCENT;
+}
+
+// Contrast guard: pick black or white text on the accent by WCAG relative
+// luminance, so a light brand color never gets unreadable white button text.
+function readableTextOn(hex: string): string {
+  const m = hex.replace("#", "");
+  const full = m.length === 3 ? m.split("").map((c) => c + c).join("") : m;
+  const n = parseInt(full, 16);
+  const toLin = (c: number) => {
+    const s = c / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  };
+  const L =
+    0.2126 * toLin((n >> 16) & 255) + 0.7152 * toLin((n >> 8) & 255) + 0.0722 * toLin(n & 255);
+  return L > 0.5 ? "#0a0a0a" : "#ffffff";
+}
+
+// Effort estimate for the welcome screen: ~10s per question, phrased in seconds
+// up to 90s, then rounded minutes.
+function effortEstimate(questionCount: number): string {
+  const seconds = questionCount * 10;
+  if (seconds <= 90) return `about ${seconds} seconds`;
+  return `about ${Math.round(seconds / 60)} minutes`;
+}
 
 export default function QuizPlayer({
   quizId,
@@ -16,6 +49,7 @@ export default function QuizPlayer({
   branding,
   placement,
   whatsapp,
+  accent,
 }: {
   quizId: string;
   title: string;
@@ -23,9 +57,12 @@ export default function QuizPlayer({
   branding: boolean;
   placement: "before_results" | "after_results";
   whatsapp: string | null;
+  accent: string | null;
 }) {
   const questions = config.questions;
-  const [phase, setPhase] = useState<Phase>("questions");
+  const accentColor = normalizeAccent(accent);
+  const accentContrast = readableTextOn(accentColor);
+  const [phase, setPhase] = useState<Phase>("welcome");
   const [qIndex, setQIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const fired = useRef<Set<string>>(new Set());
@@ -100,7 +137,6 @@ export default function QuizPlayer({
   const outcome = useMemo(() => resolveOutcome(answers), [answers, questions, config.outcomes]);
 
   function answer(questionId: string, optionId: string) {
-    fireEvent("start", undefined, "start");
     const nextAnswers = { ...answers, [questionId]: optionId };
     setAnswers(nextAnswers);
     fireEvent("question_answered", questionId);
@@ -114,11 +150,24 @@ export default function QuizPlayer({
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-xl flex-col px-4 py-6 sm:px-5 sm:py-12">
+    <main
+      className="mx-auto flex min-h-screen max-w-xl flex-col px-4 py-6 sm:px-5 sm:py-12"
+      style={{ "--accent": accentColor, "--accent-contrast": accentContrast } as React.CSSProperties}
+    >
       <div className="flex-1 rounded-[22px] bg-white p-6 shadow-soft ring-1 ring-ink-950/5 sm:p-8">
         <header className="mb-8">
           <h1 className="text-2xl font-bold tracking-[-0.02em] text-ink-950">{title}</h1>
         </header>
+
+        {phase === "welcome" && (
+          <WelcomeStep
+            questionCount={questions.length}
+            onStart={() => {
+              fireEvent("start", undefined, "start");
+              setPhase("questions");
+            }}
+          />
+        )}
 
         {phase === "questions" && (
           <QuestionStep
@@ -161,6 +210,36 @@ export default function QuizPlayer({
   );
 }
 
+// Start screen (design-pass §2.2): sets the effort expectation up front (total
+// question count + time estimate), which lifts completion. `start` fires on the
+// tap, making view→start a true intent signal.
+function WelcomeStep({
+  questionCount,
+  onStart,
+}: {
+  questionCount: number;
+  onStart: () => void;
+}) {
+  return (
+    <div className="py-2">
+      <p className="font-mono text-xs font-semibold uppercase tracking-[0.14em] text-ink-500">
+        {questionCount} questions · {effortEstimate(questionCount)}
+      </p>
+      <p className="mt-3 text-[15px] leading-relaxed text-ink-600">
+        Answer a few quick questions to get your personalized result.
+      </p>
+      <button
+        type="button"
+        onClick={onStart}
+        style={{ backgroundColor: "var(--accent)", color: "var(--accent-contrast)" }}
+        className="mt-7 w-full rounded-full px-6 py-4 text-xs font-bold uppercase tracking-[0.1em] shadow-pill transition-all hover:brightness-95 active:scale-[0.98]"
+      >
+        Start →
+      </button>
+    </div>
+  );
+}
+
 function QuestionStep({
   index,
   total,
@@ -174,33 +253,44 @@ function QuestionStep({
   selected?: string;
   onSelect: (optionId: string) => void;
 }) {
-  const pct = Math.round(((index) / total) * 100);
+  // Fill by (index+1)/total so Q1 already shows progress, never 0% (design-pass
+  // §2.3). The step count leads; the bar is a demoted hairline below it.
+  const pct = Math.round(((index + 1) / total) * 100);
   return (
     <div>
-      <div className="mb-6 h-1.5 w-full overflow-hidden rounded-full bg-ink-100">
-        <div
-          className="h-full rounded-full bg-signal-600 transition-all duration-500 ease-out"
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-      <p className="mb-1 font-mono text-[11px] font-medium uppercase tracking-[0.14em] text-ink-500">
+      <p className="mb-2 font-mono text-xs font-semibold uppercase tracking-[0.14em] text-ink-700">
         Question {index + 1} of {total}
       </p>
+      <div className="mb-6 h-1 w-full overflow-hidden rounded-full bg-ink-100">
+        <div
+          className="h-full rounded-full transition-all duration-500 ease-out"
+          style={{ width: `${pct}%`, backgroundColor: "var(--accent)" }}
+        />
+      </div>
       <h2 className="mb-6 text-xl font-bold leading-snug tracking-[-0.02em]">{question.text}</h2>
       <div className="space-y-3">
-        {question.options.map((o) => (
-          <button
-            key={o.id}
-            onClick={() => onSelect(o.id)}
-            className={`w-full rounded-2xl border px-5 py-4 text-left text-[15px] font-medium leading-snug transition-all active:scale-[0.99] ${
-              selected === o.id
-                ? "border-signal-600 bg-signal-600/5"
-                : "border-ink-200/80 hover:border-signal-500 hover:bg-ink-50/50"
-            }`}
-          >
-            {o.label}
-          </button>
-        ))}
+        {question.options.map((o) => {
+          const isSel = selected === o.id;
+          return (
+            <button
+              key={o.id}
+              onClick={() => onSelect(o.id)}
+              style={
+                isSel
+                  ? {
+                      borderColor: "var(--accent)",
+                      backgroundColor: "color-mix(in srgb, var(--accent) 7%, transparent)",
+                    }
+                  : undefined
+              }
+              className={`w-full rounded-2xl border px-5 py-4 text-left text-[15px] font-medium leading-snug transition-all active:scale-[0.99] ${
+                isSel ? "" : "border-ink-200/80 hover:border-ink-300 hover:bg-ink-50/50"
+              }`}
+            >
+              {o.label}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -304,7 +394,7 @@ function LeadForm({
         }}
         placeholder="Your name"
         autoComplete="given-name"
-        className="w-full rounded-full border border-ink-200 px-5 py-3.5 text-[15px] outline-none transition-colors focus:border-signal-600"
+        className="w-full rounded-full border border-ink-200 px-5 py-3.5 text-[15px] outline-none transition-colors focus:border-[var(--accent)]"
       />
       <input
         type="email"
@@ -314,21 +404,21 @@ function LeadForm({
           if (error) setError(null);
         }}
         placeholder="you@email.com"
-        className="w-full rounded-full border border-ink-200 px-5 py-3.5 text-[15px] outline-none transition-colors focus:border-signal-600"
+        className="w-full rounded-full border border-ink-200 px-5 py-3.5 text-[15px] outline-none transition-colors focus:border-[var(--accent)]"
       />
       <input
         type="tel"
         value={phone}
         onChange={(e) => setPhone(e.target.value)}
         placeholder="Phone (optional)"
-        className="w-full rounded-full border border-ink-200 px-5 py-3.5 text-[15px] outline-none transition-colors focus:border-signal-600"
+        className="w-full rounded-full border border-ink-200 px-5 py-3.5 text-[15px] outline-none transition-colors focus:border-[var(--accent)]"
       />
       <label className="flex items-start gap-2.5 text-xs leading-relaxed text-ink-500">
         <input
           type="checkbox"
           checked={consent}
           onChange={(e) => setConsent(e.target.checked)}
-          className="mt-0.5 accent-[#3834ff]"
+          className="mt-0.5 accent-[var(--accent)]"
         />
         <span>I agree to be contacted about my results and consent to my data being processed.</span>
       </label>
@@ -336,7 +426,8 @@ function LeadForm({
       <button
         type="submit"
         disabled={loading || !name.trim() || !email.trim() || !consent}
-        className="w-full rounded-full bg-ink-950 px-6 py-3.5 text-xs font-bold uppercase tracking-[0.1em] text-white shadow-pill transition-all hover:bg-signal-600 active:scale-[0.98] disabled:opacity-40"
+        style={{ backgroundColor: "var(--accent)", color: "var(--accent-contrast)" }}
+        className="w-full rounded-full px-6 py-3.5 text-xs font-bold uppercase tracking-[0.1em] shadow-pill transition-all hover:brightness-95 active:scale-[0.98] disabled:opacity-40"
       >
         {loading ? "…" : "See my result →"}
       </button>
@@ -391,7 +482,8 @@ function OutcomeView({
             href={outcome.cta.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-block rounded-full bg-ink-950 px-8 py-4 text-xs font-bold uppercase tracking-[0.1em] text-white shadow-pill transition-all hover:bg-signal-600 active:scale-[0.98]"
+            style={{ backgroundColor: "var(--accent)", color: "var(--accent-contrast)" }}
+            className="inline-block rounded-full px-8 py-4 text-xs font-bold uppercase tracking-[0.1em] shadow-pill transition-all hover:brightness-95 active:scale-[0.98]"
           >
             {outcome.cta.label || "Get started"} →
           </a>
