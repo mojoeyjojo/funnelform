@@ -50,6 +50,7 @@ export default function QuizPlayer({
   placement,
   whatsapp,
   accent,
+  preview = false,
 }: {
   quizId: string;
   title: string;
@@ -58,6 +59,7 @@ export default function QuizPlayer({
   placement: "before_results" | "after_results";
   whatsapp: string | null;
   accent: string | null;
+  preview?: boolean;
 }) {
   const questions = config.questions;
   const accentColor = normalizeAccent(accent);
@@ -85,6 +87,7 @@ export default function QuizPlayer({
     once?: string,
     outcome_id?: string,
   ) {
+    if (preview) return; // editor preview must not pollute analytics
     if (once) {
       if (fired.current.has(once)) return;
       fired.current.add(once);
@@ -151,7 +154,11 @@ export default function QuizPlayer({
 
   return (
     <main
-      className="mx-auto flex min-h-screen max-w-xl flex-col px-4 py-6 sm:px-5 sm:py-12"
+      className={
+        preview
+          ? "flex h-full w-full flex-col px-4 py-6"
+          : "mx-auto flex min-h-screen max-w-xl flex-col px-4 py-6 sm:px-5 sm:py-12"
+      }
       style={{ "--accent": accentColor, "--accent-contrast": accentContrast } as React.CSSProperties}
     >
       <div className="flex-1 rounded-[22px] bg-white p-6 shadow-soft ring-1 ring-ink-950/5 sm:p-8">
@@ -185,6 +192,7 @@ export default function QuizPlayer({
             answers={answers}
             outcomeId={outcome?.id}
             sessionId={sessionId.current}
+            preview={preview}
             onDone={() => setPhase("outcome")}
           />
         )}
@@ -196,14 +204,20 @@ export default function QuizPlayer({
 
       {branding && (
         <footer className="mt-6 text-center">
-          <a
-            href="https://funnelform.vercel.app"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-block rounded-full bg-white/70 px-3 py-1.5 text-[11px] font-semibold text-signal-600 ring-1 ring-ink-950/5 transition-colors hover:bg-white"
-          >
-            Made with Treeflow
-          </a>
+          {preview ? (
+            <span className="inline-block rounded-full bg-white/70 px-3 py-1.5 text-[11px] font-semibold text-signal-600 ring-1 ring-ink-950/5">
+              Made with Treeflow
+            </span>
+          ) : (
+            <a
+              href="https://funnelform.vercel.app"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block rounded-full bg-white/70 px-3 py-1.5 text-[11px] font-semibold text-signal-600 ring-1 ring-ink-950/5 transition-colors hover:bg-white"
+            >
+              Made with Treeflow
+            </a>
+          )}
         </footer>
       )}
     </main>
@@ -306,12 +320,14 @@ function LeadForm({
   outcomeId,
   sessionId,
   onDone,
+  preview = false,
 }: {
   quizId: string;
   answers: Record<string, string>;
   outcomeId?: string;
   sessionId: string;
   onDone: () => void;
+  preview?: boolean;
 }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -339,6 +355,11 @@ function LeadForm({
     }
     if (!consent) {
       setError("Please tick the box to agree to be contacted, then try again.");
+      return;
+    }
+    if (preview) {
+      // Editor preview: show the result without creating a real lead.
+      onDone();
       return;
     }
     setLoading(true);
