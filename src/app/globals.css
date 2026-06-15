@@ -43,6 +43,34 @@
   --color-paper: #f5f3ee;
   --color-mist: #eeecef;
 
+  /* ===========================================================================
+     Dark marketing system (design-board-dark-v2). The home + niche landing
+     surfaces wear this; the app/workspace/player keep the light tokens above.
+     Cohesion comes from ONE fixed set of values recurring across every section:
+     surfaces by value, a single accent, four text steps. Named to avoid Tailwind
+     builtins (no `--color-base`, which would hijack `text-base`).
+     ======================================================================== */
+  /* Surface scale — depth through value */
+  --color-canvas: #0e0e0e;
+  --color-surface-1: #161616;
+  --color-surface-2: #1e1e1e;
+  --color-surface-3: #262626;
+  --color-surface-4: #2e2e2e;
+  --color-surface-5: #3a3a3a;
+  /* Accent scale — the single action colour */
+  --color-accent: #2546ff;
+  --color-accent-dim: #1a35e0;
+  --color-accent-bright: #4d65ff;
+  /* Text scale (on dark) */
+  --color-fg: #ffffff;
+  --color-fg-muted: #a8a8a8;
+  --color-fg-dim: #666666;
+  --color-fg-faint: #444444;
+  /* Semantic */
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+
   /* Type — Geist family only (no serif, no editorial accent) */
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
@@ -56,6 +84,11 @@
     0 40px 80px -30px rgba(14, 21, 64, 0.25),
     0 10px 30px -15px rgba(14, 21, 64, 0.12);
   --shadow-pill: 0 10px 30px -10px rgba(10, 15, 46, 0.5);
+
+  /* Dark-surface card lift (separation comes from a soft black drop + a hairline
+     top highlight) and the accent glow that blooms under the action colour. */
+  --shadow-card-dark: 0 18px 40px -22px rgba(0, 0, 0, 0.8);
+  --shadow-accent: 0 6px 28px -8px rgba(37, 70, 255, 0.45);
 
   /* Motion */
   --animate-float-slow: float-slow 6s ease-in-out infinite;
@@ -122,7 +155,56 @@ body {
 }
 
 /* ---------------------------------------------------------------------------
+   surface-card — THE canonical "light object on the dark hero" surface.
+
+   Any light element placed on the dark marketing hero (the embedded wizard, the
+   product mocks beside it) MUST use this so they share one scheme: a SOLID white
+   card, the float shadow, and a hairline ink ring. This is the equal of the
+   product-mock cards in marketing.tsx (bg-white + shadow-float + ring-ink-950/5).
+
+   Do NOT use `glass` on the dark hero — glass is the frosted surface for LIGHT
+   backdrops (the /new builder over HeroSky). On near-black it goes translucent
+   and grey, which is the exact mismatch this token exists to prevent.
+   See docs/light-surfaces.md.
+   ------------------------------------------------------------------------- */
+@utility surface-card {
+  background: #ffffff;
+  box-shadow:
+    0 0 0 1px rgba(10, 15, 46, 0.05),
+    0 40px 80px -30px rgba(14, 21, 64, 0.25),
+    0 10px 30px -15px rgba(14, 21, 64, 0.12);
+}
+
+/* ---------------------------------------------------------------------------
+   Editor workspace palette (mockup: 07-editor-light). A NEUTRAL light scheme:
+   true-grey borders and text, off-white surfaces, the single #2546ff accent.
+   Scoped to `.editor-ui` so the rest of the app keeps its indigo "ink" tokens.
+   Redefining the shared app vars here (hairline/muted/foreground/signal) re-skins
+   existing children (settings cards, inputs) to neutral for free; the `--e-*`
+   tokens add the surfaces and accent-glow the editor cards need.
+   ------------------------------------------------------------------------- */
+.editor-ui {
+  --background: #ffffff;
+  --foreground: #0e0e0e;
+  --muted: #888888;
+  --hairline: rgba(0, 0, 0, 0.08);
+  --signal: #2546ff;
+
+  --e-bg: #f4f4f2;
+  --e-surface-2: #fafaf9;
+  --e-surface-3: #f0f0ee;
+  --e-text-2: #444444;
+  --e-text-faint: #bbbbbb;
+  --e-accent-bright: #4d65ff;
+  --e-accent-glow: rgba(37, 70, 255, 0.08);
+  --e-accent-glow-md: rgba(37, 70, 255, 0.14);
+  --e-success: #16a34a;
+  --e-success-bg: rgba(22, 163, 74, 0.08);
+}
+
+/* ---------------------------------------------------------------------------
    Glass — the core surface language (frosted, with the inset top highlight).
+   For light objects on LIGHT backdrops only. On the dark hero use surface-card.
    ------------------------------------------------------------------------- */
 @utility glass {
   background: linear-gradient(
@@ -217,6 +299,77 @@ body {
   -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 12%, #000 88%, transparent 100%);
 }
 
+/* Feather a row into the page at its left and right edges. Used on the
+   testimonial carousel so cards fade out at the sides (reads as "there's more"). */
+@utility mask-fade-x {
+  mask-image: linear-gradient(90deg, transparent 0%, #000 9%, #000 91%, transparent 100%);
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 9%, #000 91%, transparent 100%);
+}
+
+/* Stepped carousel for the testimonials: slide one card to the left, pause, then
+   slide the next, landing a card dead-center at each stop (the centering itself is
+   the `padding-left: calc(50% - cardWidth/2)` on the carousel window). The track
+   holds THREE identical copies; we animate across the MIDDLE copy (-33.3333% to
+   -66.6667%) so the centered card always has neighbors on both sides and the loop
+   is seamless. Tuned for ELEVEN cards per copy: each card is 100/33 = 3.0303% of
+   the track, so 11 hold-then-slide steps span one copy. If you change the number
+   of testimonials, update these stops (and the count) to match. */
+@keyframes ff-marquee {
+  0%, 6% { transform: translateX(-33.3333%); }
+  9.09%, 15.09% { transform: translateX(-36.3636%); }
+  18.18%, 24.18% { transform: translateX(-39.3939%); }
+  27.27%, 33.27% { transform: translateX(-42.4242%); }
+  36.36%, 42.36% { transform: translateX(-45.4545%); }
+  45.45%, 51.45% { transform: translateX(-48.4848%); }
+  54.54%, 60.54% { transform: translateX(-51.5152%); }
+  63.63%, 69.63% { transform: translateX(-54.5455%); }
+  72.72%, 78.72% { transform: translateX(-57.5758%); }
+  81.81%, 87.81% { transform: translateX(-60.6061%); }
+  90.90%, 96.90% { transform: translateX(-63.6364%); }
+  100% { transform: translateX(-66.6667%); }
+}
+
+@utility animate-marquee {
+  animation: ff-marquee 33s ease-in-out infinite;
+}
+
+/* ---------------------------------------------------------------------------
+   Dark atmosphere (design board: Gradients & Atmosphere). The light in every
+   marketing scene comes from the ACCENT, not the surface — near-true-black base
+   with an accent radial bloom, no soft pastel gradients.
+   ------------------------------------------------------------------------- */
+
+/* Hero — accent radial wash blooming from the top, faint echo lower-right. */
+@utility bg-hero-glow {
+  background:
+    radial-gradient(ellipse 78% 56% at 50% -8%, rgba(37, 70, 255, 0.22), transparent 68%),
+    radial-gradient(ellipse 44% 46% at 90% 78%, rgba(37, 70, 255, 0.08), transparent 70%),
+    #0e0e0e;
+}
+
+/* Glow — the deep CTA moment: a single concentrated accent pool on black. */
+@utility bg-cta-glow {
+  background:
+    radial-gradient(ellipse 70% 120% at 50% 0%, rgba(37, 70, 255, 0.35), transparent 62%),
+    #0e0e0e;
+}
+
+/* Card surface gradient — a barely-there top-down lift for elevated panels. */
+@utility bg-card-surface {
+  background: linear-gradient(145deg, #1e1e1e, #161616);
+}
+
+/* Accent linear — for the rare filled accent panel. */
+@utility bg-accent-linear {
+  background: linear-gradient(135deg, #1a35e0, #2546ff, #4d65ff);
+}
+
+/* Section glow — a soft, off-center accent wash to give a flat dark section
+   depth without a literal illustration. Pair with `relative isolate`. */
+@utility bg-section-glow {
+  background: radial-gradient(60% 70% at 78% 0%, rgba(37, 70, 255, 0.10), transparent 70%);
+}
+
 /* Dreamy — soft aurora cloud blobs over warm white */
 @utility bg-dreamy {
   background:
@@ -250,3 +403,9 @@ body {
     transition-duration: 0.001ms !important;
   }
 }
+
+/* marquee utilities (carousel) */
+
+/* carousel: stepped timing */
+
+/* carousel: centered stops */

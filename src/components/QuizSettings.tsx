@@ -38,7 +38,7 @@ export function QuizSettings({
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="mt-4 flex w-full items-center justify-between rounded-2xl border border-[var(--hairline)] bg-white px-4 py-3 text-left text-sm font-semibold transition-colors hover:border-ink-300"
+        className="mt-4 flex w-full items-center justify-between rounded-2xl border border-[var(--hairline)] bg-white px-4 py-3 text-left text-sm font-semibold transition-colors hover:border-black/20"
         aria-expanded={open}
       >
         <span>Quiz settings</span>
@@ -139,7 +139,7 @@ export function QuizSettings({
                     type="button"
                     onClick={() => setConfirmDelete(false)}
                     disabled={deleting}
-                    className="rounded-full border border-[var(--hairline)] bg-white px-4 py-2 text-xs font-bold uppercase tracking-[0.1em] transition-colors hover:bg-ink-50 disabled:opacity-40"
+                    className="rounded-full border border-[var(--hairline)] bg-white px-4 py-2 text-xs font-bold uppercase tracking-[0.1em] transition-colors hover:bg-[var(--e-surface-3)] disabled:opacity-40"
                   >
                     Cancel
                   </button>
@@ -208,7 +208,7 @@ function RatingBar({
   );
 }
 
-// Embeddable iframe snippet (section 5.4), shown in the publish banner (later task).
+// Embeddable iframe snippet (section 5.4), shown inside the editor Share card.
 export function EmbedSnippet({ url, title }: { url: string; title: string }) {
   const [copied, setCopied] = useState(false);
   const safeTitle = (title || "Quiz").replace(/"/g, "'");
@@ -225,18 +225,18 @@ export function EmbedSnippet({ url, title }: { url: string; title: string }) {
   }
 
   return (
-    <div className="mt-4 border-t border-emerald-200/70 pt-4">
+    <div className="mt-4 border-t border-[var(--hairline)] pt-4">
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-semibold text-emerald-800">Want it on your own site?</p>
+        <p className="text-[13px] font-semibold text-[var(--foreground)]">Want it on your own site?</p>
         <button
           type="button"
           onClick={copy}
-          className="shrink-0 rounded-full border border-emerald-300 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.08em] text-emerald-800 transition-colors hover:bg-emerald-100"
+          className="shrink-0 rounded-full border border-[var(--hairline)] px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--e-text-2)] transition-colors hover:border-black/20"
         >
           {copied ? "Copied" : "Copy code"}
         </button>
       </div>
-      <p className="mt-1 text-xs text-emerald-700">
+      <p className="mt-1 text-[12px] text-[var(--muted)]">
         Paste this where you want the quiz to appear. Works on WordPress, Webflow, Squarespace, Wix,
         and most site builders.
       </p>
@@ -245,7 +245,7 @@ export function EmbedSnippet({ url, title }: { url: string; title: string }) {
         value={snippet}
         rows={3}
         onClick={(e) => e.currentTarget.select()}
-        className="mt-2 w-full resize-none rounded-lg border border-emerald-200 bg-white p-3 font-mono text-[11px] leading-relaxed text-ink-700 outline-none"
+        className="mt-2 w-full resize-none rounded-[10px] border border-[var(--hairline)] bg-white p-3 font-mono text-[11px] leading-relaxed text-[var(--e-text-2)] outline-none"
       />
     </div>
   );

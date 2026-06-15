@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import type { GeneratedQuiz, QuizConfig } from "@/lib/schema";
 import type {
@@ -9,7 +9,9 @@ import type {
   GenerateStreamEvent,
   Goal,
 } from "@/lib/types";
+import Link from "next/link";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { HeroSky } from "@/components/HeroSky";
 import { saveQuizAsCurrentUser, newQuizEditorUrl } from "@/lib/saveQuiz";
 import { funnelToSignup } from "@/lib/pendingPrompt";
 import { Label } from "./QuizView";
@@ -126,7 +128,15 @@ function captureAttribution(): void {
 // builder: marketing hero is swapped for a compact heading, and the top-right
 // action is a "← Workspace" return link instead of the sign-in / Workspace nav.
 // The flow, pipeline, and editor redirect are identical in both contexts.
-export default function Generator({ inApp = false }: { inApp?: boolean } = {}) {
+export default function Generator({
+  inApp = false,
+  layout = "page",
+}: { inApp?: boolean; layout?: "page" | "hero" } = {}) {
+  // "page" = the full-screen builder (public homepage history + the in-workspace
+  // /new screen). "hero" = just the stepper card, embedded in the shared marketing
+  // hero's left column on `/`. Both layouts render the LIGHT theme: the hero shows
+  // a bright frosted wizard card against the dark marketing hero behind it.
+  const dark = false;
   const [sessionId] = useState(newSessionId);
 
   // --- Stepper state -------------------------------------------------------
@@ -390,6 +400,86 @@ export default function Generator({ inApp = false }: { inApp?: boolean } = {}) {
     return 0;
   })();
 
+  // The stepper itself, identical in both layouts. `dark` flips every card into
+  // the dark marketing surface system; in "page" layout it stays light.
+  const cards = (
+    <StepCard key={step}>
+      {step === "entry" && (
+        <EntryCard
+          dark={dark}
+          url={url}
+          setUrl={setUrl}
+          onSubmit={onSubmitUrl}
+          onDescribe={goToDescribe}
+        />
+      )}
+
+      {step === "describe" && (
+        <DescribeCard
+          dark={dark}
+          description={description}
+          setDescription={setDescription}
+          onSubmit={onSubmitDescribe}
+          onBack={goalLocked ? undefined : () => setStep("entry")}
+          ctaLabel={goalLocked ? "Build my quiz" : "Continue"}
+        />
+      )}
+
+      {step === "goal" && (
+        <GoalCard
+          dark={dark}
+          flow={flow}
+          goal={goal}
+          setGoal={setGoal}
+          onContinue={continueGoal}
+          onBack={() => setStep(flow === "B" ? "describe" : "entry")}
+        />
+      )}
+
+      {step === "extraction" && (
+        <ExtractionCard
+          dark={dark}
+          extracting={extracting}
+          extract={extract}
+          thin={extractThin}
+          onContinue={() => startGenerateA()}
+          onDescribe={thinToDescribe}
+        />
+      )}
+
+      {step === "generating" && (
+        <GeneratingCard
+          dark={dark}
+          flow={flow}
+          stage={stage}
+          saving={saving}
+          error={genError}
+          hasQuiz={!!quiz}
+          onRetry={retryGeneration}
+          onOpen={() => quiz && void saveAndOpen(quiz, lastRunRef.current?.src ?? null)}
+        />
+      )}
+    </StepCard>
+  );
+
+  // Hero layout: only the stepper, dropped into the marketing hero's left column.
+  // The page chrome (header, hero copy, glow background, marketing sections) is
+  // owned by the shared MarketingPage around it.
+  if (layout === "hero") {
+    return (
+      <SurfaceContext.Provider value="card">
+        <div className="w-full text-left">
+          {flow && (
+            <div className="mb-4">
+              <DotBar labels={dotLabels} activeIndex={dotIndex} dark={dark} />
+            </div>
+          )}
+          {cards}
+        </div>
+      </SurfaceContext.Provider>
+    );
+  }
+
   return (
     <main>
       <section className="relative isolate flex min-h-svh flex-col overflow-hidden">
@@ -404,26 +494,26 @@ export default function Generator({ inApp = false }: { inApp?: boolean } = {}) {
           <div className="flex items-center gap-4">
             {flow && <DotBar labels={dotLabels} activeIndex={dotIndex} />}
             {inApp ? (
-              <a
+              <Link
                 href="/dashboard"
                 className="rounded-full border border-ink-950/15 px-4 py-2 text-xs font-bold uppercase tracking-[0.1em] text-ink-950 transition-all hover:border-signal-600 hover:text-signal-600 active:scale-[0.98]"
               >
                 ← Workspace
-              </a>
+              </Link>
             ) : user ? (
-              <a
+              <Link
                 href="/dashboard"
                 className="rounded-full border border-ink-950/15 px-4 py-2 text-xs font-bold uppercase tracking-[0.1em] text-ink-950 transition-all hover:border-signal-600 hover:text-signal-600 active:scale-[0.98]"
               >
                 Workspace →
-              </a>
+              </Link>
             ) : user === null ? (
-              <a
+              <Link
                 href="/login"
                 className="rounded-full border border-ink-950/15 px-4 py-2 text-xs font-bold uppercase tracking-[0.1em] text-ink-950 transition-all hover:border-signal-600 hover:text-signal-600 active:scale-[0.98]"
               >
                 Sign in
-              </a>
+              </Link>
             ) : (
               <span className="h-8" />
             )}
@@ -461,58 +551,7 @@ export default function Generator({ inApp = false }: { inApp?: boolean } = {}) {
               </div>
             ))}
 
-          <StepCard key={step}>
-            {step === "entry" && (
-              <EntryCard
-                url={url}
-                setUrl={setUrl}
-                onSubmit={onSubmitUrl}
-                onDescribe={goToDescribe}
-              />
-            )}
-
-            {step === "describe" && (
-              <DescribeCard
-                description={description}
-                setDescription={setDescription}
-                onSubmit={onSubmitDescribe}
-                onBack={goalLocked ? undefined : () => setStep("entry")}
-                ctaLabel={goalLocked ? "Build my quiz" : "Continue"}
-              />
-            )}
-
-            {step === "goal" && (
-              <GoalCard
-                flow={flow}
-                goal={goal}
-                setGoal={setGoal}
-                onContinue={continueGoal}
-                onBack={() => setStep(flow === "B" ? "describe" : "entry")}
-              />
-            )}
-
-            {step === "extraction" && (
-              <ExtractionCard
-                extracting={extracting}
-                extract={extract}
-                thin={extractThin}
-                onContinue={() => startGenerateA()}
-                onDescribe={thinToDescribe}
-              />
-            )}
-
-            {step === "generating" && (
-              <GeneratingCard
-                flow={flow}
-                stage={stage}
-                saving={saving}
-                error={genError}
-                hasQuiz={!!quiz}
-                onRetry={retryGeneration}
-                onOpen={() => quiz && void saveAndOpen(quiz, lastRunRef.current?.src ?? null)}
-              />
-            )}
-          </StepCard>
+          {cards}
         </div>
       </section>
 
@@ -551,18 +590,25 @@ function StepCard({ children }: { children: React.ReactNode }) {
   );
 }
 
-function DotBar({ labels, activeIndex }: { labels: string[]; activeIndex: number }) {
+function DotBar({
+  labels,
+  activeIndex,
+  dark = false,
+}: {
+  labels: string[];
+  activeIndex: number;
+  dark?: boolean;
+}) {
+  const active = dark ? "w-4 bg-accent" : "w-4 bg-signal-600";
+  const done = dark ? "w-1.5 bg-accent/50" : "w-1.5 bg-emerald-500";
+  const todo = dark ? "w-1.5 bg-white/15" : "w-1.5 bg-ink-200";
   return (
-    <div className="hidden items-center gap-1.5 sm:flex" aria-hidden>
+    <div className="flex items-center gap-1.5" aria-hidden>
       {labels.map((label, i) => (
         <span
           key={label}
           className={`h-1.5 rounded-full transition-all duration-300 ${
-            i === activeIndex
-              ? "w-4 bg-signal-600"
-              : i < activeIndex
-                ? "w-1.5 bg-emerald-500"
-                : "w-1.5 bg-ink-200"
+            i === activeIndex ? active : i < activeIndex ? done : todo
           }`}
         />
       ))}
@@ -582,27 +628,44 @@ function FlowBadge({ flow }: { flow: "A" | "B" }) {
   );
 }
 
-// Shared glass panel for every step card.
+// Which light surface the wizard cards wear, set by the surrounding layout (the
+// SAME `cards` tree is reused by both, so this can't be a prop). On the dark
+// marketing hero it's `surface-card` (a solid white card matching the product
+// mocks beside it); on the light /new + homepage-history builder it's the frosted
+// `glass`. See docs/light-surfaces.md. Default is "glass" (the page layout).
+type WizardSurface = "glass" | "card";
+const SurfaceContext = createContext<WizardSurface>("glass");
+
+// Shared panel for every step card. Picks its surface from SurfaceContext so the
+// hero wizard matches the light objects around it.
 function Panel({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  const base = useContext(SurfaceContext) === "card" ? "surface-card" : "glass";
   return (
-    <div className={`glass mx-auto w-full rounded-[22px] p-7 text-left sm:p-8 ${className}`}>
+    <div className={`${base} mx-auto w-full rounded-[22px] p-7 text-left sm:p-8 ${className}`}>
       {children}
     </div>
   );
 }
 
-const PRIMARY_BTN =
-  "rounded-full bg-ink-950 px-6 py-3 text-xs font-bold uppercase tracking-[0.1em] text-white shadow-pill transition-all hover:bg-signal-600 active:scale-[0.98] disabled:opacity-40";
+// Primary action button, themed per layout: ink pill (light) vs accent pill with
+// its glow (dark).
+function primaryBtn(dark: boolean) {
+  return dark
+    ? "rounded-full bg-accent px-6 py-3 text-xs font-bold uppercase tracking-[0.1em] text-white transition-all hover:bg-accent-bright hover:shadow-accent active:scale-[0.98] disabled:opacity-40"
+    : "rounded-full bg-ink-950 px-6 py-3 text-xs font-bold uppercase tracking-[0.1em] text-white shadow-pill transition-all hover:bg-signal-600 active:scale-[0.98] disabled:opacity-40";
+}
 
 // =============================================================================
 // Step cards
 
 function EntryCard({
+  dark,
   url,
   setUrl,
   onSubmit,
   onDescribe,
 }: {
+  dark: boolean;
   url: string;
   setUrl: (v: string) => void;
   onSubmit: (e: React.FormEvent) => void;
@@ -612,32 +675,48 @@ function EntryCard({
     <Panel>
       <form
         onSubmit={onSubmit}
-        className="flex items-center gap-2 rounded-full border border-ink-200 bg-white/70 p-1.5 pl-5"
+        className={`flex items-center gap-2 rounded-full p-1.5 pl-5 ${
+          dark ? "border border-white/10 bg-surface-2" : "border border-ink-200 bg-white/70"
+        }`}
         noValidate
       >
         <input
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           placeholder="yourbusiness.com"
-          className="min-w-0 flex-1 bg-transparent text-sm font-medium text-ink-950 outline-none placeholder:text-ink-400"
+          className={`min-w-0 flex-1 bg-transparent text-sm font-medium outline-none ${
+            dark
+              ? "text-fg placeholder:text-fg-faint"
+              : "text-ink-950 placeholder:text-ink-400"
+          }`}
           aria-label="Your website URL"
         />
-        <button type="submit" disabled={!url.trim()} className={`shrink-0 ${PRIMARY_BTN}`}>
+        <button type="submit" disabled={!url.trim()} className={`shrink-0 ${primaryBtn(dark)}`}>
           <span className="sm:hidden">Start →</span>
           <span className="hidden sm:inline">Build my quiz →</span>
         </button>
       </form>
 
       <div className="my-4 flex items-center gap-3">
-        <span className="h-px flex-1 bg-ink-200/80" />
-        <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-ink-400">or</span>
-        <span className="h-px flex-1 bg-ink-200/80" />
+        <span className={`h-px flex-1 ${dark ? "bg-white/10" : "bg-ink-200/80"}`} />
+        <span
+          className={`text-[11px] font-medium uppercase tracking-[0.14em] ${
+            dark ? "text-fg-dim" : "text-ink-400"
+          }`}
+        >
+          or
+        </span>
+        <span className={`h-px flex-1 ${dark ? "bg-white/10" : "bg-ink-200/80"}`} />
       </div>
 
       <button
         type="button"
         onClick={onDescribe}
-        className="w-full text-center text-sm font-medium text-ink-500 underline decoration-ink-300 underline-offset-4 transition-colors hover:text-signal-600"
+        className={`w-full text-center text-sm font-medium underline underline-offset-4 transition-colors ${
+          dark
+            ? "text-fg-dim decoration-white/20 hover:text-accent-bright"
+            : "text-ink-500 decoration-ink-300 hover:text-signal-600"
+        }`}
       >
         Describe your business instead
       </button>
@@ -646,12 +725,14 @@ function EntryCard({
 }
 
 function DescribeCard({
+  dark,
   description,
   setDescription,
   onSubmit,
   onBack,
   ctaLabel,
 }: {
+  dark: boolean;
   description: string;
   setDescription: (v: string) => void;
   onSubmit: (e: React.FormEvent) => void;
@@ -660,22 +741,36 @@ function DescribeCard({
 }) {
   return (
     <Panel>
-      <h2 className="text-xl font-extrabold tracking-[-0.02em] text-ink-950">
+      <h2
+        className={`text-xl font-extrabold tracking-[-0.02em] ${dark ? "text-fg" : "text-ink-950"}`}
+      >
         Tell us about your business
       </h2>
 
       {/* Two numbered cues live INSIDE a tinted container — guidance, not fields. */}
-      <div className="mt-4 rounded-[16px] bg-signal-600/[0.04] p-4 ring-1 ring-signal-600/10">
-        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-500">
+      <div
+        className={`mt-4 rounded-[16px] p-4 ${
+          dark ? "bg-accent/[0.06] ring-1 ring-accent/15" : "bg-signal-600/[0.04] ring-1 ring-signal-600/10"
+        }`}
+      >
+        <p
+          className={`text-[11px] font-bold uppercase tracking-[0.12em] ${
+            dark ? "text-fg-dim" : "text-ink-500"
+          }`}
+        >
           Cover these two things
         </p>
-        <ol className="mt-2 space-y-1.5 text-sm text-ink-600">
+        <ol className={`mt-2 space-y-1.5 text-sm ${dark ? "text-fg-muted" : "text-ink-600"}`}>
           <li className="flex gap-2">
-            <span className="font-mono text-xs font-bold text-signal-600">1.</span>
+            <span className={`font-mono text-xs font-bold ${dark ? "text-accent-bright" : "text-signal-600"}`}>
+              1.
+            </span>
             What do you do, and who do you do it for?
           </li>
           <li className="flex gap-2">
-            <span className="font-mono text-xs font-bold text-signal-600">2.</span>
+            <span className={`font-mono text-xs font-bold ${dark ? "text-accent-bright" : "text-signal-600"}`}>
+              2.
+            </span>
             What is your main offer or service?
           </li>
         </ol>
@@ -687,7 +782,11 @@ function DescribeCard({
           onChange={(e) => setDescription(e.target.value)}
           rows={4}
           placeholder="I'm a nutrition coach helping women over 40 balance their hormones naturally. My main offer is a 12-week 1-on-1 program at €1,200."
-          className="w-full resize-none rounded-[16px] border border-ink-200 bg-white/70 px-4 py-3 text-sm font-medium leading-relaxed text-ink-950 outline-none transition-colors placeholder:text-ink-400 focus:border-signal-600"
+          className={`w-full resize-none rounded-[16px] px-4 py-3 text-sm font-medium leading-relaxed outline-none transition-colors ${
+            dark
+              ? "border border-white/10 bg-surface-2 text-fg placeholder:text-fg-faint focus:border-accent"
+              : "border border-ink-200 bg-white/70 text-ink-950 placeholder:text-ink-400 focus:border-signal-600"
+          }`}
           aria-label="Describe your business"
         />
         <div className="mt-4 flex items-center justify-between">
@@ -695,14 +794,16 @@ function DescribeCard({
             <button
               type="button"
               onClick={onBack}
-              className="text-sm font-medium text-ink-500 transition-colors hover:text-signal-600"
+              className={`text-sm font-medium transition-colors ${
+                dark ? "text-fg-dim hover:text-accent-bright" : "text-ink-500 hover:text-signal-600"
+              }`}
             >
               ← Use a website
             </button>
           ) : (
             <span />
           )}
-          <button type="submit" disabled={!description.trim()} className={PRIMARY_BTN}>
+          <button type="submit" disabled={!description.trim()} className={primaryBtn(dark)}>
             {ctaLabel} →
           </button>
         </div>
@@ -712,12 +813,14 @@ function DescribeCard({
 }
 
 function GoalCard({
+  dark,
   flow,
   goal,
   setGoal,
   onContinue,
   onBack,
 }: {
+  dark: boolean;
   flow: Flow;
   goal: Goal;
   setGoal: (g: Goal) => void;
@@ -726,10 +829,12 @@ function GoalCard({
 }) {
   return (
     <Panel>
-      <h2 className="text-xl font-extrabold tracking-[-0.02em] text-ink-950">
+      <h2
+        className={`text-xl font-extrabold tracking-[-0.02em] ${dark ? "text-fg" : "text-ink-950"}`}
+      >
         What should this quiz do for you?
       </h2>
-      <p className="mt-1.5 text-sm text-ink-500">
+      <p className={`mt-1.5 text-sm ${dark ? "text-fg-dim" : "text-ink-500"}`}>
         {flow === "A"
           ? "We'll use this to know exactly what to look for on your site."
           : "We'll shape your questions, outcomes, and CTAs around this."}
@@ -738,6 +843,12 @@ function GoalCard({
       <div className="mt-5 grid gap-2.5">
         {GOAL_OPTIONS.map((opt) => {
           const selected = goal === opt.value;
+          const selCls = dark
+            ? "border-accent bg-accent/[0.08]"
+            : "border-signal-600 bg-signal-600/[0.04]";
+          const idleCls = dark
+            ? "border-white/10 bg-surface-2 hover:border-white/20"
+            : "border-ink-200 bg-white/60 hover:border-ink-300";
           return (
             <button
               key={opt.value}
@@ -745,17 +856,21 @@ function GoalCard({
               onClick={() => setGoal(opt.value)}
               aria-pressed={selected}
               className={`flex items-start gap-3 rounded-[16px] border p-3.5 text-left transition-all active:scale-[0.99] ${
-                selected
-                  ? "border-signal-600 bg-signal-600/[0.04]"
-                  : "border-ink-200 bg-white/60 hover:border-ink-300"
+                selected ? selCls : idleCls
               }`}
             >
               <span className="text-xl leading-none" aria-hidden>
                 {opt.emoji}
               </span>
               <span className="min-w-0">
-                <span className="block text-sm font-bold text-ink-950">{opt.title}</span>
-                <span className="block text-xs leading-snug text-ink-500">{opt.desc}</span>
+                <span className={`block text-sm font-bold ${dark ? "text-fg" : "text-ink-950"}`}>
+                  {opt.title}
+                </span>
+                <span
+                  className={`block text-xs leading-snug ${dark ? "text-fg-dim" : "text-ink-500"}`}
+                >
+                  {opt.desc}
+                </span>
               </span>
             </button>
           );
@@ -766,11 +881,13 @@ function GoalCard({
         <button
           type="button"
           onClick={onBack}
-          className="text-sm font-medium text-ink-500 transition-colors hover:text-signal-600"
+          className={`text-sm font-medium transition-colors ${
+            dark ? "text-fg-dim hover:text-accent-bright" : "text-ink-500 hover:text-signal-600"
+          }`}
         >
           ← Back
         </button>
-        <button type="button" onClick={onContinue} className={PRIMARY_BTN}>
+        <button type="button" onClick={onContinue} className={primaryBtn(dark)}>
           Continue →
         </button>
       </div>
@@ -779,12 +896,14 @@ function GoalCard({
 }
 
 function ExtractionCard({
+  dark,
   extracting,
   extract,
   thin,
   onContinue,
   onDescribe,
 }: {
+  dark: boolean;
   extracting: boolean;
   extract: ExtractFacts | null;
   thin: boolean;
@@ -795,8 +914,12 @@ function ExtractionCard({
     return (
       <Panel>
         <div className="flex items-center gap-3" aria-live="polite" role="status">
-          <span className="h-2 w-2 animate-pulse rounded-full bg-signal-600 motion-reduce:animate-none" />
-          <p className="text-sm font-semibold text-ink-700">
+          <span
+            className={`h-2 w-2 animate-pulse rounded-full motion-reduce:animate-none ${
+              dark ? "bg-accent" : "bg-signal-600"
+            }`}
+          />
+          <p className={`text-sm font-semibold ${dark ? "text-fg-muted" : "text-ink-700"}`}>
             Reading your site with your goal in mind…
           </p>
         </div>
@@ -804,7 +927,9 @@ function ExtractionCard({
           {[0, 1, 2].map((i) => (
             <div
               key={i}
-              className="h-3 animate-pulse rounded-full bg-ink-100 motion-reduce:animate-none"
+              className={`h-3 animate-pulse rounded-full motion-reduce:animate-none ${
+                dark ? "bg-surface-3" : "bg-ink-100"
+              }`}
               style={{ width: `${85 - i * 18}%` }}
             />
           ))}
@@ -816,16 +941,18 @@ function ExtractionCard({
   if (thin || !extract) {
     return (
       <Panel>
-        <h2 className="text-xl font-extrabold tracking-[-0.02em] text-ink-950">
+        <h2
+          className={`text-xl font-extrabold tracking-[-0.02em] ${dark ? "text-fg" : "text-ink-950"}`}
+        >
           We couldn&apos;t read enough from that link
         </h2>
-        <p className="mt-2 text-sm text-ink-600">
+        <p className={`mt-2 text-sm ${dark ? "text-fg-muted" : "text-ink-600"}`}>
           Some sites block readers or are light on text. Tell us about your
           business instead and we&apos;ll take it from there — your goal is
           already set.
         </p>
         <div className="mt-5 flex justify-end">
-          <button type="button" onClick={onDescribe} className={PRIMARY_BTN}>
+          <button type="button" onClick={onDescribe} className={primaryBtn(dark)}>
             Describe your business →
           </button>
         </div>
@@ -835,22 +962,26 @@ function ExtractionCard({
 
   return (
     <Panel>
-      <h2 className="text-xl font-extrabold tracking-[-0.02em] text-ink-950">
+      <h2
+        className={`text-xl font-extrabold tracking-[-0.02em] ${dark ? "text-fg" : "text-ink-950"}`}
+      >
         Here&apos;s what we found
       </h2>
-      <p className="mt-1.5 text-sm text-ink-500">
+      <p className={`mt-1.5 text-sm ${dark ? "text-fg-dim" : "text-ink-500"}`}>
         We&apos;ll build your quiz around this. You can fine-tune everything in
         the editor.
       </p>
 
       <dl className="mt-5 space-y-3">
         {extract.services.length > 0 && (
-          <ExtractRow label="Services">
+          <ExtractRow dark={dark} label="Services">
             <div className="flex flex-wrap gap-1.5">
               {extract.services.map((s) => (
                 <span
                   key={s}
-                  className="rounded-full bg-ink-50 px-2.5 py-1 text-xs font-medium text-ink-700"
+                  className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                    dark ? "bg-surface-2 text-fg-muted" : "bg-ink-50 text-ink-700"
+                  }`}
                 >
                   {s}
                 </span>
@@ -858,14 +989,34 @@ function ExtractionCard({
             </div>
           </ExtractRow>
         )}
-        {extract.audience && <ExtractRow label="Audience">{extract.audience}</ExtractRow>}
-        {extract.tone && <ExtractRow label="Tone">{extract.tone}</ExtractRow>}
+        {extract.audience && (
+          <ExtractRow dark={dark} label="Audience">
+            {extract.audience}
+          </ExtractRow>
+        )}
+        {extract.tone && (
+          <ExtractRow dark={dark} label="Tone">
+            {extract.tone}
+          </ExtractRow>
+        )}
         {extract.goalMatch.value && (
-          <div className="rounded-[16px] border border-signal-600/20 bg-signal-600/[0.04] p-3.5">
-            <p className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-signal-600">
+          <div
+            className={`rounded-[16px] p-3.5 ${
+              dark
+                ? "border border-accent/25 bg-accent/[0.06]"
+                : "border border-signal-600/20 bg-signal-600/[0.04]"
+            }`}
+          >
+            <p
+              className={`font-mono text-[10px] font-bold uppercase tracking-[0.12em] ${
+                dark ? "text-accent-bright" : "text-signal-600"
+              }`}
+            >
               ↑ matched to your goal · {extract.goalMatch.label}
             </p>
-            <p className="mt-1 text-sm font-medium text-ink-800">{extract.goalMatch.value}</p>
+            <p className={`mt-1 text-sm font-medium ${dark ? "text-fg-muted" : "text-ink-800"}`}>
+              {extract.goalMatch.value}
+            </p>
           </div>
         )}
       </dl>
@@ -874,11 +1025,13 @@ function ExtractionCard({
         <button
           type="button"
           onClick={onDescribe}
-          className="text-sm font-medium text-ink-500 transition-colors hover:text-signal-600"
+          className={`text-sm font-medium transition-colors ${
+            dark ? "text-fg-dim hover:text-accent-bright" : "text-ink-500 hover:text-signal-600"
+          }`}
         >
           Not quite right?
         </button>
-        <button type="button" onClick={onContinue} className={PRIMARY_BTN}>
+        <button type="button" onClick={onContinue} className={primaryBtn(dark)}>
           Looks good, build it →
         </button>
       </div>
@@ -886,18 +1039,31 @@ function ExtractionCard({
   );
 }
 
-function ExtractRow({ label, children }: { label: string; children: React.ReactNode }) {
+function ExtractRow({
+  dark,
+  label,
+  children,
+}: {
+  dark: boolean;
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="grid grid-cols-[5.5rem_1fr] items-baseline gap-3">
-      <dt className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink-400">
+      <dt
+        className={`font-mono text-[10px] font-bold uppercase tracking-[0.12em] ${
+          dark ? "text-fg-dim" : "text-ink-400"
+        }`}
+      >
         {label}
       </dt>
-      <dd className="text-sm text-ink-700">{children}</dd>
+      <dd className={`text-sm ${dark ? "text-fg-muted" : "text-ink-700"}`}>{children}</dd>
     </div>
   );
 }
 
 function GeneratingCard({
+  dark,
   flow,
   stage,
   saving,
@@ -906,6 +1072,7 @@ function GeneratingCard({
   onRetry,
   onOpen,
 }: {
+  dark: boolean;
   flow: Flow;
   stage: GenerateStage | null;
   saving: boolean;
@@ -919,16 +1086,22 @@ function GeneratingCard({
   if (error) {
     return (
       <Panel>
-        <div className="rounded-[16px] border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+        <div
+          className={`rounded-[16px] p-4 text-sm ${
+            dark
+              ? "border border-error/30 bg-error/10 text-[#fca5a5]"
+              : "border border-rose-200 bg-rose-50 text-rose-700"
+          }`}
+        >
           {error}
         </div>
         <div className="mt-4 flex justify-end gap-2">
           {hasQuiz ? (
-            <button type="button" onClick={onOpen} className={PRIMARY_BTN}>
+            <button type="button" onClick={onOpen} className={primaryBtn(dark)}>
               Open my quiz →
             </button>
           ) : (
-            <button type="button" onClick={onRetry} className={PRIMARY_BTN}>
+            <button type="button" onClick={onRetry} className={primaryBtn(dark)}>
               Try again →
             </button>
           )}
@@ -939,22 +1112,23 @@ function GeneratingCard({
 
   return (
     <Panel>
-      <h2 className="text-xl font-extrabold tracking-[-0.02em] text-ink-950">
+      <h2
+        className={`text-xl font-extrabold tracking-[-0.02em] ${dark ? "text-fg" : "text-ink-950"}`}
+      >
         {saving ? "Opening your quiz…" : "Building your quiz…"}
       </h2>
       <ol className="mt-5 space-y-3" aria-live="polite">
         {steps.map((label, i) => {
           const status = genStepStatus(i, stage, saving);
+          const activeCls = dark ? "font-semibold text-fg" : "font-semibold text-ink-900";
+          const doneCls = dark ? "text-fg-dim" : "text-ink-500";
+          const waitCls = dark ? "text-fg-faint" : "text-ink-400";
           return (
             <li key={label} className="flex items-center gap-3">
-              <StepDot status={status} />
+              <StepDot status={status} dark={dark} />
               <span
                 className={`text-sm ${
-                  status === "active"
-                    ? "font-semibold text-ink-900"
-                    : status === "done"
-                      ? "text-ink-500"
-                      : "text-ink-400"
+                  status === "active" ? activeCls : status === "done" ? doneCls : waitCls
                 }`}
               >
                 {label}
@@ -967,10 +1141,14 @@ function GeneratingCard({
   );
 }
 
-function StepDot({ status }: { status: "done" | "active" | "wait" }) {
+function StepDot({ status, dark }: { status: "done" | "active" | "wait"; dark: boolean }) {
   if (status === "done") {
     return (
-      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-[11px] text-white">
+      <span
+        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] text-white ${
+          dark ? "bg-success" : "bg-emerald-500"
+        }`}
+      >
         ✓
       </span>
     );
@@ -978,14 +1156,26 @@ function StepDot({ status }: { status: "done" | "active" | "wait" }) {
   if (status === "active") {
     return (
       <span className="relative flex h-5 w-5 shrink-0 items-center justify-center">
-        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-signal-600/40 motion-reduce:animate-none" />
-        <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-signal-600" />
+        <span
+          className={`absolute inline-flex h-full w-full animate-ping rounded-full motion-reduce:animate-none ${
+            dark ? "bg-accent/40" : "bg-signal-600/40"
+          }`}
+        />
+        <span
+          className={`relative inline-flex h-2.5 w-2.5 rounded-full ${
+            dark ? "bg-accent" : "bg-signal-600"
+          }`}
+        />
       </span>
     );
   }
   return (
     <span className="flex h-5 w-5 shrink-0 items-center justify-center">
-      <span className="inline-flex h-2.5 w-2.5 rounded-full border border-ink-200" />
+      <span
+        className={`inline-flex h-2.5 w-2.5 rounded-full border ${
+          dark ? "border-white/20" : "border-ink-200"
+        }`}
+      />
     </span>
   );
 }
@@ -1068,78 +1258,5 @@ function MetaSummary({ meta }: { meta: Record<string, unknown> }) {
 }
 
 // =============================================================================
-// Daylight sky for the hero: base gradient + warm sun bloom + cool mint rise +
-// SVG ellipse-cluster clouds (overlapping ellipses filled with a radial white
-// gradient, 95% → 55% → 0%), feathered top/bottom into the page. No image asset.
-
-const HERO_CLOUDS: React.CSSProperties[] = [
-  { left: "4%", top: "6%", width: 280, height: 90, opacity: 0.85 },
-  { right: "10%", top: "4%", width: 320, height: 100, opacity: 0.8 },
-  { left: "14%", top: "34%", width: 260, height: 80, opacity: 0.7 },
-  { right: "6%", top: "40%", width: 290, height: 88, opacity: 0.75 },
-  { left: "36%", top: "64%", width: 340, height: 110, opacity: 0.7 },
-  { right: "18%", bottom: "8%", width: 270, height: 84, opacity: 0.75 },
-  { left: "6%", bottom: "4%", width: 230, height: 72, opacity: 0.65 },
-];
-
-function HeroSky() {
-  return (
-    <div
-      aria-hidden
-      className="mask-fade-y pointer-events-none absolute inset-0 -z-10 overflow-hidden"
-    >
-      {/* base sky → sunset gradient */}
-      <div className="bg-daylight-sky absolute inset-0" />
-
-      {/* warm sun glow, top-right */}
-      <div
-        className="absolute rounded-full"
-        style={{
-          right: "8%",
-          top: "-6%",
-          height: 420,
-          width: 420,
-          filter: "blur(64px)",
-          background:
-            "radial-gradient(circle at center, rgba(255,231,186,0.95) 0%, rgba(255,212,156,0.55) 35%, rgba(255,212,156,0) 70%)",
-        }}
-      />
-
-      {/* cool mint glow, bottom-center */}
-      <div
-        className="absolute inset-x-0 bottom-0"
-        style={{
-          height: "40%",
-          opacity: 0.6,
-          background:
-            "radial-gradient(60% 80% at 50% 100%, rgba(158,241,224,0.35), transparent 70%)",
-        }}
-      />
-
-      {/* clouds */}
-      {HERO_CLOUDS.map((style, i) => (
-        <svg key={i} className="absolute" style={style} viewBox="0 0 200 80">
-          <use href="#ff-cloud" />
-        </svg>
-      ))}
-
-      {/* reusable cloud symbol */}
-      <svg width="0" height="0" className="absolute">
-        <defs>
-          <radialGradient id="ff-cloud-grad" cx="50%" cy="55%" r="60%">
-            <stop offset="0%" stopColor="#ffffff" stopOpacity="0.95" />
-            <stop offset="70%" stopColor="#ffffff" stopOpacity="0.55" />
-            <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
-          </radialGradient>
-          <g id="ff-cloud" fill="url(#ff-cloud-grad)">
-            <ellipse cx="60" cy="48" rx="42" ry="22" />
-            <ellipse cx="100" cy="40" rx="36" ry="26" />
-            <ellipse cx="140" cy="48" rx="40" ry="20" />
-            <ellipse cx="80" cy="52" rx="30" ry="14" />
-            <ellipse cx="120" cy="54" rx="34" ry="16" />
-          </g>
-        </defs>
-      </svg>
-    </div>
-  );
-}
+// The daylight hero sky now lives in a shared component (src/components/HeroSky)
+// so the niche landing pages render the identical scene. See <HeroSky/>.

@@ -2,254 +2,222 @@
 
 import { useState } from "react";
 import type { GeneratedQuiz } from "@/lib/schema";
-import type { OutputRating } from "@/lib/types";
 
-// Shared quiz view, used by the generate flow (with the one-tap rating), the
-// saved-quiz editor (no rating), and the free-tool preview (`readOnly`). When
-// readOnly, fields render as plain text instead of editable inputs.
+// The editor content surface (mockup: 07-editor-light). Renders the quiz title,
+// each question and outcome as an editable card, and the read-only follow-up
+// sequence. Used only by the saved-quiz editor; it expects the `.editor-ui`
+// neutral palette from its parent. `Label` is exported for reuse elsewhere.
+//
+// Scoring/routing (option tags + scores, outcome match_logic, cta.url) is hidden
+// logic the owner does not edit: option tags show as a locked tag, and a hint
+// reminds the owner they are editing words, not logic.
 export function QuizView({
   quiz,
-  rating,
-  onRate,
   onEdit,
   onRegenerate,
-  readOnly = false,
 }: {
   quiz: GeneratedQuiz;
-  rating?: OutputRating | null;
-  onRate?: (r: OutputRating) => void;
   onEdit: (path: string, mutate: (draft: GeneratedQuiz) => void) => void;
   onRegenerate?: (target: "question" | "outcome", index: number) => Promise<void>;
-  readOnly?: boolean;
 }) {
   const { config } = quiz;
   return (
-    <section className="mt-8 space-y-8">
-      {onRate && <RatingBar rating={rating ?? null} onRate={onRate} />}
-
+    <div className="space-y-12">
       {/* Title */}
-      <div>
-        <Label>Quiz title</Label>
-        <EditInput
+      <section>
+        <SectionLabel>Quiz title</SectionLabel>
+        <TextField
           value={quiz.title}
           onChange={(v) => onEdit("title", (d) => (d.title = v))}
-          className="text-2xl font-extrabold tracking-tight"
-          readOnly={readOnly}
+          className="rounded-[14px] px-4 py-3.5 text-[18px] font-bold tracking-[-0.02em]"
+          aria-label="Quiz title"
         />
-        <p className="mt-1 px-2 font-mono text-[11px] text-[var(--muted)]">
-          type: {config.type} · schema_version {config.schema_version}
-        </p>
-      </div>
+      </section>
 
       {/* Questions */}
-      <div className="space-y-5">
-        <Label>Questions ({config.questions.length})</Label>
-        {config.questions.map((q, qi) => (
-          <div
-            key={q.id}
-            id={`sec-q-${qi}`}
-            data-nav-section
-            className="scroll-mt-6 rounded-2xl border border-[var(--hairline)] p-4"
-          >
-            {onRegenerate && !readOnly && (
-              <div className="mb-2 flex justify-end">
-                <RegenButton onRun={() => onRegenerate("question", qi)} />
-              </div>
-            )}
-            <EditInput
+      {config.questions.map((q, qi) => (
+        <section key={q.id} id={`sec-q-${qi}`} data-nav-section className="scroll-mt-6">
+          <div className="mb-4 flex items-center justify-between">
+            <SectionLabel>Question {String(qi + 1).padStart(2, "0")}</SectionLabel>
+            {onRegenerate && <RegenButton onRun={() => onRegenerate("question", qi)} label="question" />}
+          </div>
+          <div className="rounded-[20px] border-[1.5px] border-[var(--hairline)] bg-[var(--e-surface-2)] p-6">
+            <FieldLabel>Question text</FieldLabel>
+            <TextField
               value={q.text}
               onChange={(v) => onEdit(`questions.${qi}.text`, (d) => (d.config.questions[qi].text = v))}
-              className="font-semibold"
-              readOnly={readOnly}
+              className="rounded-[14px] px-4 py-3.5 text-[15px] font-medium"
             />
-            <div className="mt-2 space-y-1">
+
+            <p className="mb-3 mt-5 font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-[var(--e-text-faint)]">
+              Answer options
+            </p>
+            <div className="space-y-2">
               {q.options.map((o, oi) => (
-                <div key={o.id} className="flex items-center gap-2">
-                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--hairline)]" />
-                  <EditInput
+                <div key={o.id} className="flex items-center gap-2.5">
+                  <TextField
                     value={o.label}
                     onChange={(v) =>
                       onEdit(`questions.${qi}.options.${oi}.label`, (d) => (d.config.questions[qi].options[oi].label = v))
                     }
-                    className="text-sm"
-                    readOnly={readOnly}
+                    className="flex-1 rounded-full px-4 py-2.5 text-[13.5px] font-medium"
                   />
-                  <span className="shrink-0 font-mono text-[10px] text-[var(--muted)]">[{o.tags.join(", ")}]</span>
+                  <LockTag>{o.tags.join(" / ")}</LockTag>
                 </div>
               ))}
             </div>
+
+            <div className="mt-4 flex items-center gap-2 border-t border-[var(--hairline)] pt-4 text-[12px] text-[var(--e-text-faint)]">
+              <LockIcon className="h-3.5 w-3.5 shrink-0" />
+              Scoring and routing is handled automatically. Edit the words, not the logic.
+            </div>
           </div>
-        ))}
-      </div>
+        </section>
+      ))}
 
       {/* Outcomes */}
-      <div className="space-y-5">
-        <Label>Scored outcomes ({config.outcomes.length})</Label>
-        {config.outcomes.map((out, oi) => (
-          <div
-            key={out.id}
-            id={`sec-o-${oi}`}
-            data-nav-section
-            className="scroll-mt-6 rounded-2xl border border-[var(--hairline)] p-4"
-          >
-            {onRegenerate && !readOnly && (
-              <div className="mb-2 flex justify-end">
-                <RegenButton onRun={() => onRegenerate("outcome", oi)} />
-              </div>
-            )}
-            <EditInput
+      {config.outcomes.map((out, oi) => (
+        <section key={out.id} id={`sec-o-${oi}`} data-nav-section className="scroll-mt-6">
+          <div className="mb-4 flex items-center justify-between">
+            <SectionLabel>Outcome</SectionLabel>
+            {onRegenerate && <RegenButton onRun={() => onRegenerate("outcome", oi)} label="outcome" />}
+          </div>
+          <div className="rounded-[20px] border-[1.5px] border-[var(--hairline)] bg-[var(--e-surface-2)] p-6">
+            <FieldLabel>Result name</FieldLabel>
+            <TextField
               value={out.name}
               onChange={(v) => onEdit(`outcomes.${oi}.name`, (d) => (d.config.outcomes[oi].name = v))}
-              className="text-lg font-bold"
-              readOnly={readOnly}
+              className="rounded-[10px] px-3.5 py-2.5 text-[15px] font-bold"
             />
-            <p className="px-2 font-mono text-[10px] text-[var(--muted)]">
-              match: {out.match_logic.primary_tag} ≥ {out.match_logic.min_score}
-            </p>
-            <EditInput
-              value={out.description}
-              onChange={(v) => onEdit(`outcomes.${oi}.description`, (d) => (d.config.outcomes[oi].description = v))}
-              className="mt-1 text-sm"
-              multiline
-              readOnly={readOnly}
-            />
-            <p className="mt-2 px-2 text-xs font-semibold text-[var(--muted)]">Recommends:</p>
-            <div className="px-2 text-sm">{out.recommendations.join(" · ")}</div>
-            {!readOnly && (
-              <div className="mt-3 space-y-3">
-                <div>
-                  <p className="mb-1 px-2 text-[11px] font-semibold text-[var(--muted)]">
-                    Button text
-                  </p>
-                  <EditInput
-                    value={out.cta.label}
-                    onChange={(v) => onEdit(`outcomes.${oi}.cta.label`, (d) => (d.config.outcomes[oi].cta.label = v))}
-                    className="text-sm font-semibold"
-                    placeholder="Book a call"
-                  />
-                </div>
-                <div>
-                  <p className="mb-1 px-2 text-[11px] font-semibold text-[var(--muted)]">
-                    Button link (optional)
-                  </p>
-                  <EditInput
-                    value={out.cta.url}
-                    onChange={(v) => onEdit(`outcomes.${oi}.cta.url`, (d) => (d.config.outcomes[oi].cta.url = v))}
-                    className="text-sm"
-                    placeholder="e.g. https://calendly.com/you/intro-call"
-                  />
-                  {!out.cta.url && (
-                    <p className="mt-1 px-2 text-[11px] text-[var(--muted)]">
-                      Optional. Add a destination URL to send users to after quiz
-                      completion (e.g., a booking page, Calendly or a special offer).
-                      Leave blank to only capture the lead for later follow-up in your
-                      workspace.
-                    </p>
-                  )}
+
+            <div className="mt-4">
+              <FieldLabel>Description</FieldLabel>
+              <TextField
+                value={out.description}
+                onChange={(v) => onEdit(`outcomes.${oi}.description`, (d) => (d.config.outcomes[oi].description = v))}
+                multiline
+                className="rounded-[14px] px-4 py-3.5 text-[15px] leading-relaxed"
+              />
+            </div>
+
+            {out.recommendations.length > 0 && (
+              <div className="mt-4">
+                <FieldLabel>Recommendations</FieldLabel>
+                <div className="rounded-[14px] border-[1.5px] border-dashed border-[var(--hairline)] bg-white px-4 py-3 text-[14px] text-[var(--e-text-2)]">
+                  {out.recommendations.join(", ")}
                 </div>
               </div>
             )}
-          </div>
-        ))}
-      </div>
 
-      {/* Email sequence: display-only preview (build spec §5.3) */}
-      <div id="sec-emails" data-nav-section className="scroll-mt-6 space-y-3">
-        <Label>Follow-up sequence ({config.email_sequence.length} emails) · preview</Label>
-        <p className="text-xs text-[var(--muted)]">We drafted a follow-up sequence. Copy it into your email tool.</p>
-        {config.email_sequence.map((m, i) => (
-          <div key={i} className="rounded-2xl border border-dashed border-[var(--hairline)] p-4 text-sm">
-            <p className="font-mono text-[10px] text-[var(--muted)]">+{m.send_offset_hours}h</p>
-            <p className="font-semibold">{m.subject}</p>
-            <p className="mt-1 whitespace-pre-wrap text-[var(--muted)]">{m.body}</p>
-            <p className="mt-1 text-xs font-semibold text-[var(--signal)]">{m.cta}</p>
+            <div className="mt-4 flex items-center gap-2.5">
+              <span className="w-20 shrink-0 text-[12px] font-semibold text-[var(--muted)]">Button text</span>
+              <TextField
+                value={out.cta.label}
+                onChange={(v) => onEdit(`outcomes.${oi}.cta.label`, (d) => (d.config.outcomes[oi].cta.label = v))}
+                placeholder="Book a call"
+                className="flex-1 rounded-full px-3.5 py-2.5 text-[13px] font-medium"
+              />
+            </div>
+            <div className="mt-2.5 flex items-center gap-2.5">
+              <span className="w-20 shrink-0 text-[12px] font-semibold text-[var(--muted)]">Button URL</span>
+              <TextField
+                value={out.cta.url}
+                onChange={(v) => onEdit(`outcomes.${oi}.cta.url`, (d) => (d.config.outcomes[oi].cta.url = v))}
+                placeholder="https://calendly.com/you/intro-call"
+                className="flex-1 rounded-full px-3.5 py-2.5 text-[13px] font-medium"
+              />
+              <span className="shrink-0 font-mono text-[10px] font-bold text-[var(--e-text-faint)]">Optional</span>
+            </div>
           </div>
-        ))}
-      </div>
-    </section>
-  );
-}
+        </section>
+      ))}
 
-function RatingBar({
-  rating,
-  onRate,
-}: {
-  rating: OutputRating | null;
-  onRate: (r: OutputRating) => void;
-}) {
-  return (
-    <div className="flex items-center gap-3 rounded-full border border-[var(--hairline)] px-4 py-2.5">
-      <span className="text-xs text-[var(--muted)]">First impression?</span>
-      {(["love_it", "not_quite"] as const).map((r) => {
-        const selected = rating === r;
-        return (
-          <button
-            key={r}
-            onClick={() => onRate(r)}
-            disabled={rating !== null}
-            className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
-              selected
-                ? "bg-[var(--signal)] text-white"
-                : "text-[var(--foreground)] hover:bg-[var(--signal)]/10 disabled:opacity-40"
-            }`}
-          >
-            {r === "love_it" ? "Love it" : "Not quite"}
-          </button>
-        );
-      })}
-      {rating && <span className="text-xs text-emerald-600">Thanks, recorded.</span>}
+      {/* Follow-up sequence (display only) */}
+      <section id="sec-emails" data-nav-section className="scroll-mt-6">
+        <SectionLabel>Follow-ups</SectionLabel>
+        <p className="mb-4 mt-1 text-[13px] text-[var(--muted)]">
+          We drafted a follow-up email sequence. Copy it into your email tool.
+        </p>
+        <div className="space-y-3">
+          {config.email_sequence.map((m, i) => (
+            <div
+              key={i}
+              className="rounded-[14px] border-[1.5px] border-dashed border-[var(--hairline)] bg-[var(--e-surface-2)] p-4"
+            >
+              <p className="font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-[var(--e-text-faint)]">
+                +{m.send_offset_hours}h
+              </p>
+              <p className="mt-1.5 text-[14px] font-semibold text-[var(--foreground)]">{m.subject}</p>
+              <p className="mt-1 whitespace-pre-wrap text-[13px] leading-relaxed text-[var(--e-text-2)]">{m.body}</p>
+              <p className="mt-2 text-[12px] font-semibold text-[var(--signal)]">{m.cta}</p>
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }
 
-export function EditInput({
+// A focused, editable text field. Neutral border, accent focus ring (mockup).
+function TextField({
   value,
   onChange,
   className = "",
   multiline = false,
-  readOnly = false,
   placeholder,
+  "aria-label": ariaLabel,
 }: {
   value: string;
   onChange: (v: string) => void;
   className?: string;
   multiline?: boolean;
-  readOnly?: boolean;
   placeholder?: string;
+  "aria-label"?: string;
 }) {
-  if (readOnly) {
-    return (
-      <div className={`px-2 py-1 ${multiline ? "whitespace-pre-wrap " : ""}${className}`}>{value}</div>
-    );
-  }
-  // Every editable field carries a fixed hairline border so it reads as
-  // editable at a glance (not only on hover); hover darkens it, focus turns it
-  // into the signal accent. Placeholder text stays light grey so it's clearly a
-  // hint, not a value.
   const base =
-    "w-full rounded-lg border border-[var(--hairline)] bg-white/40 px-2 py-1 outline-none transition-colors placeholder:text-[#888a8b] hover:border-ink-300 focus:border-[var(--signal)]";
+    "w-full border-[1.5px] border-[var(--hairline)] bg-white text-[var(--foreground)] outline-none transition-[border-color,box-shadow] placeholder:text-[var(--e-text-faint)] focus:border-[var(--signal)] focus:shadow-[0_0_0_3px_var(--e-accent-glow)]";
   return multiline ? (
     <textarea
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      rows={2}
+      rows={3}
       placeholder={placeholder}
-      className={`${base} resize-none ${className}`}
+      aria-label={ariaLabel}
+      className={`${base} resize-none leading-relaxed ${className}`}
     />
   ) : (
     <input
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
+      aria-label={ariaLabel}
       className={`${base} ${className}`}
     />
   );
 }
 
-// "Give me another take" reroll for a single question/outcome (§5.3). Manages
-// its own loading + error so the rest of the editor stays responsive. The actual
-// AI call + logic-preserving merge live in EditQuizClient.regenerate.
-function RegenButton({ onRun }: { onRun: () => Promise<void> }) {
+// Locked routing tag shown beside an answer option (read-only logic).
+function LockTag({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-[var(--hairline)] bg-[var(--e-surface-3)] px-2.5 py-1.5 font-mono text-[10px] font-bold text-[var(--e-text-faint)]">
+      <LockIcon className="h-2.5 w-2.5" />
+      {children}
+    </span>
+  );
+}
+
+function LockIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className} aria-hidden="true">
+      <rect x="3" y="11" width="18" height="11" rx="2" />
+      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    </svg>
+  );
+}
+
+// "Give me another take" reroll for a single question/outcome. Manages its own
+// loading + error so the rest of the editor stays responsive.
+function RegenButton({ onRun, label }: { onRun: () => Promise<void>; label: string }) {
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   return (
@@ -267,13 +235,31 @@ function RegenButton({ onRun }: { onRun: () => Promise<void> }) {
           setBusy(false);
         }
       }}
-      className="inline-flex items-center gap-1.5 rounded-full border border-[var(--hairline)] px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--muted)] transition-colors hover:border-[var(--signal)] hover:text-[var(--signal)] disabled:opacity-50"
+      className="inline-flex items-center gap-1.5 rounded-full bg-[var(--e-accent-glow)] px-3 py-1.5 text-[11px] font-bold text-[var(--signal)] transition-colors hover:bg-[var(--e-accent-glow-md)] disabled:opacity-50"
     >
-      {busy ? "Regenerating…" : failed ? "Failed, retry" : "↻ Regenerate"}
+      {busy ? "Regenerating…" : failed ? "Failed, retry" : `↻ Regenerate ${label}`}
     </button>
   );
 }
 
+// Mono section label (mockup `.section-label`).
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--e-text-faint)]">
+      {children}
+    </p>
+  );
+}
+
+function FieldLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="mb-2 font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-[var(--e-text-faint)]">
+      {children}
+    </p>
+  );
+}
+
+// Kept for reuse by the generate flow (Generator imports this).
 export function Label({ children }: { children: React.ReactNode }) {
   return (
     <p className="mb-2 font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--muted)]">
