@@ -275,7 +275,7 @@ function QuestionStep({
       <p className="mb-2 font-mono text-xs font-semibold uppercase tracking-[0.14em] text-ink-700">
         Question {index + 1} of {total}
       </p>
-      <div className="mb-6 h-1 w-full overflow-hidden rounded-full bg-ink-100">
+      <div className="mb-6 h-1 w-full overflow-hidden rounded-full bg-black/[0.07]">
         <div
           className="h-full rounded-full transition-all duration-500 ease-out"
           style={{ width: `${pct}%`, backgroundColor: "var(--accent)" }}
@@ -298,7 +298,7 @@ function QuestionStep({
                   : undefined
               }
               className={`w-full rounded-2xl border px-5 py-4 text-left text-[15px] font-medium leading-snug transition-all active:scale-[0.99] ${
-                isSel ? "" : "border-ink-200/80 hover:border-ink-300 hover:bg-ink-50/50"
+                isSel ? "" : "border-black/10 hover:border-black/25 hover:bg-black/[0.02]"
               }`}
             >
               {o.label}
@@ -415,7 +415,7 @@ function LeadForm({
         }}
         placeholder="Your name"
         autoComplete="given-name"
-        className="w-full rounded-full border border-ink-200 px-5 py-3.5 text-[15px] outline-none transition-colors focus:border-[var(--accent)]"
+        className="w-full rounded-full border border-black/15 px-5 py-3.5 text-[15px] outline-none transition-colors focus:border-[var(--accent)]"
       />
       <input
         type="email"
@@ -425,14 +425,14 @@ function LeadForm({
           if (error) setError(null);
         }}
         placeholder="you@email.com"
-        className="w-full rounded-full border border-ink-200 px-5 py-3.5 text-[15px] outline-none transition-colors focus:border-[var(--accent)]"
+        className="w-full rounded-full border border-black/15 px-5 py-3.5 text-[15px] outline-none transition-colors focus:border-[var(--accent)]"
       />
       <input
         type="tel"
         value={phone}
         onChange={(e) => setPhone(e.target.value)}
         placeholder="Phone (optional)"
-        className="w-full rounded-full border border-ink-200 px-5 py-3.5 text-[15px] outline-none transition-colors focus:border-[var(--accent)]"
+        className="w-full rounded-full border border-black/15 px-5 py-3.5 text-[15px] outline-none transition-colors focus:border-[var(--accent)]"
       />
       <label className="flex items-start gap-2.5 text-xs leading-relaxed text-ink-500">
         <input
@@ -486,7 +486,7 @@ function OutcomeView({
         {outcome.description}
       </p>
       {outcome.recommendations.length > 0 && (
-        <div className="mb-8 rounded-2xl bg-ink-50 p-5">
+        <div className="mb-8 rounded-2xl bg-black/[0.03] p-5">
           <p className="mb-2.5 font-mono text-[11px] font-medium uppercase tracking-[0.14em] text-ink-500">
             Recommended for you
           </p>

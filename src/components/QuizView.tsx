@@ -242,10 +242,11 @@ function RegenButton({ onRun, label }: { onRun: () => Promise<void>; label: stri
   );
 }
 
-// Mono section label (mockup `.section-label`).
+// Mono section label (mockup `.section-label`), e.g. "Question 01". A readable
+// grey header; the in-card FieldLabels stay lighter.
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p className="font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--e-text-faint)]">
+    <p className="font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--muted)]">
       {children}
     </p>
   );

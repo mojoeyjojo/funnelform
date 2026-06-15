@@ -57,7 +57,7 @@ export function StructureNav({
       <div className="flex-1 overflow-y-auto p-3">
         {groups.map((g) => (
           <div key={g.title} className="mb-6">
-            <p className="px-2 pb-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-[var(--e-text-faint)]">
+            <p className="px-2 pb-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-[var(--muted)]">
               {g.title}
             </p>
             {g.items.map((it) => {
