@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { GeneratedQuiz, QuizConfig } from "@/lib/schema";
 import type { OutputRating } from "@/lib/types";
 import { QuizView } from "./QuizView";
+import { QuizSettings, EmbedSnippet } from "./QuizSettings";
+import { StructureNav } from "./StructureNav";
+import QuizPlayer from "./QuizPlayer";
 
 type SaveState = "clean" | "dirty" | "saving" | "saved" | "error";
 type PublishState =
@@ -53,8 +56,14 @@ export default function EditQuizClient({
   );
   const [slug, setSlug] = useState<string | null>(initialSlug);
   const [blockedOutcomes, setBlockedOutcomes] = useState<string[]>([]);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+
+  // Shell UI state.
+  const [activeId, setActiveId] = useState("sec-settings");
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [mobileTab, setMobileTab] = useState<"edit" | "preview">("edit");
+  const [previewKey, setPreviewKey] = useState(0); // bump to restart the preview
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+  const editorRef = useRef<HTMLDivElement>(null);
 
   // First-impression rating, only for just-generated quizzes (?new=1).
   const [ratingSession, setRatingSession] = useState<string | null>(null);
@@ -63,6 +72,33 @@ export default function EditQuizClient({
     const params = new URLSearchParams(window.location.search);
     if (params.get("new") === "1") setRatingSession(params.get("sid") ?? "unknown");
   }, []);
+
+  // Scroll-spy: highlight the sidebar item for the section nearest the top of
+  // the editor pane. Re-observes when the question/outcome counts change.
+  useEffect(() => {
+    const root = editorRef.current;
+    if (!root) return;
+    const sections = Array.from(root.querySelectorAll<HTMLElement>("[data-nav-section]"));
+    if (sections.length === 0) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((e) => e.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+        if (visible[0]?.target.id) setActiveId(visible[0].target.id);
+      },
+      { root, rootMargin: "0px 0px -65% 0px", threshold: 0 },
+    );
+    sections.forEach((s) => observer.observe(s));
+    return () => observer.disconnect();
+  }, [quiz.config.questions.length, quiz.config.outcomes.length]);
+
+  function navigate(id: string) {
+    const el = editorRef.current?.querySelector(`#${CSS.escape(id)}`);
+    el?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setDrawerOpen(false);
+    if (mobileTab !== "edit") setMobileTab("edit");
+  }
 
   async function recordRating(r: OutputRating) {
     if (rating) return;
@@ -174,6 +210,7 @@ export default function EditQuizClient({
   // Save any pending edits first (the publish gate validates the SAVED config),
   // then publish. Surfaces the CTA-URL validation block inline.
   async function publish() {
+    setBannerDismissed(false);
     // Defense in depth: the edit page already walls guests behind the signup
     // overlay, but if state is stale, route them to convert anyway.
     if (isGuest) {
@@ -216,6 +253,7 @@ export default function EditQuizClient({
   // are kept, so re-publishing restores the same public URL. Frees the free
   // plan's one-live-quiz slot so a different quiz can go live.
   async function unpublish() {
+    setBannerDismissed(false);
     setPublishState("unpublishing");
     try {
       const res = await fetch(`/api/quizzes/${id}/publish`, { method: "DELETE" });
@@ -225,57 +263,83 @@ export default function EditQuizClient({
     }
   }
 
-  // Soft delete: the quiz moves to Recently deleted (30-day grace) and the owner
-  // lands back in the workspace. Reversible from /deleted until the purge cron.
   async function deleteQuiz() {
-    setDeleting(true);
-    try {
-      const res = await fetch(`/api/quizzes/${id}`, { method: "DELETE" });
-      if (res.ok) {
-        window.location.href = "/dashboard";
-      } else {
-        setDeleting(false);
-      }
-    } catch {
-      setDeleting(false);
-    }
+    const res = await fetch(`/api/quizzes/${id}`, { method: "DELETE" });
+    if (res.ok) window.location.href = "/dashboard";
   }
 
-  const playerUrl = slug ? `${typeof window !== "undefined" ? window.location.origin : ""}/q/${slug}` : null;
+  const playerUrl = slug
+    ? `${typeof window !== "undefined" ? window.location.origin : ""}/q/${slug}`
+    : null;
+  const showBanner =
+    !bannerDismissed &&
+    (publishState === "published" ||
+      publishState === "blocked" ||
+      publishState === "plan_blocked" ||
+      publishState === "error");
 
   return (
-    <main className="mx-auto max-w-3xl px-5 py-12 sm:px-8">
-      <header className="mb-6 flex items-center justify-between gap-4">
-        <Link
-          href="/dashboard"
-          className="text-xs font-semibold text-[var(--muted)] underline underline-offset-4 hover:text-[var(--signal)]"
-        >
-          ← Workspace
+    <div className="flex h-screen flex-col overflow-hidden bg-paper text-[var(--foreground)]">
+      {/* Topbar */}
+      <header className="z-20 flex h-14 flex-shrink-0 items-center gap-2 border-b border-[var(--hairline)] bg-white px-4 sm:px-5">
+        <Link href="/dashboard" className="flex items-center gap-2 pr-3 sm:border-r sm:border-[var(--hairline)] sm:pr-4">
+          <span className="text-base font-extrabold tracking-tight">Treeflow</span>
         </Link>
-        <div className="flex items-center gap-3">
-          {state === "saved" && <span className="text-xs text-emerald-600">Saved.</span>}
-          {state === "dirty" && <span className="text-xs text-[var(--muted)]">Unsaved changes</span>}
-          {state === "error" && <span className="text-xs text-rose-700">Save failed</span>}
+        <div className="hidden min-w-0 flex-1 items-center gap-1.5 sm:flex">
+          <Link href="/dashboard" className="text-[13px] font-medium text-[var(--muted)] hover:text-[var(--foreground)]">
+            My quizzes
+          </Link>
+          <span className="text-[13px] text-ink-300">/</span>
+          <span className="truncate text-[13px] font-semibold">{quiz.title || "Untitled quiz"}</span>
+        </div>
+
+        {/* Structure trigger (below xl) */}
+        <button
+          type="button"
+          onClick={() => setDrawerOpen(true)}
+          className="ml-auto rounded-lg border border-[var(--hairline)] px-3 py-1.5 text-xs font-semibold transition-colors hover:border-ink-300 xl:hidden"
+        >
+          Structure
+        </button>
+
+        {/* Mobile Edit-Preview toggle (below md) */}
+        <div className="flex rounded-full border border-[var(--hairline)] p-0.5 md:hidden">
+          {(["edit", "preview"] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setMobileTab(t)}
+              className={`rounded-full px-3 py-1 text-xs font-semibold capitalize transition-colors ${
+                mobileTab === t ? "bg-[var(--signal)] text-white" : "text-[var(--muted)]"
+              }`}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+
+        <div className="ml-auto flex items-center gap-2 md:ml-3">
+          <SaveStatus state={state} />
           <button
             onClick={save}
             disabled={state === "saving" || state === "clean" || state === "saved"}
-            className="rounded-full border border-[var(--hairline)] px-5 py-2.5 text-xs font-bold uppercase tracking-[0.1em] transition-colors hover:border-[var(--signal)] hover:text-[var(--signal)] disabled:opacity-40"
+            className="hidden rounded-full border border-[var(--hairline)] px-4 py-1.5 text-xs font-bold uppercase tracking-[0.08em] transition-colors hover:border-[var(--signal)] hover:text-[var(--signal)] disabled:opacity-40 sm:block"
           >
-            {state === "saving" ? "Saving…" : "Save changes"}
+            {state === "saving" ? "Saving…" : "Save"}
           </button>
           {(publishState === "published" || publishState === "unpublishing") && (
             <button
               onClick={unpublish}
               disabled={publishState === "unpublishing"}
-              className="rounded-full border border-[var(--hairline)] px-5 py-2.5 text-xs font-bold uppercase tracking-[0.1em] transition-colors hover:border-rose-300 hover:text-rose-700 disabled:opacity-40"
+              className="hidden rounded-full border border-[var(--hairline)] px-4 py-1.5 text-xs font-bold uppercase tracking-[0.08em] transition-colors hover:border-rose-300 hover:text-rose-700 disabled:opacity-40 lg:block"
             >
-              {publishState === "unpublishing" ? "Taking offline…" : "Unpublish"}
+              {publishState === "unpublishing" ? "Offline…" : "Unpublish"}
             </button>
           )}
           <button
             onClick={publish}
             disabled={publishState === "publishing" || publishState === "unpublishing"}
-            className="rounded-full bg-[var(--foreground)] px-5 py-2.5 text-xs font-bold uppercase tracking-[0.1em] text-white transition-colors hover:bg-[var(--signal)] disabled:opacity-40"
+            className="rounded-full bg-[var(--signal)] px-4 py-1.5 text-xs font-bold uppercase tracking-[0.08em] text-white transition-colors hover:brightness-110 disabled:opacity-40"
           >
             {publishState === "publishing"
               ? "Publishing…"
@@ -286,225 +350,181 @@ export default function EditQuizClient({
         </div>
       </header>
 
-      {/* Publish result / validation block */}
+      {/* Publish banner strip */}
+      {showBanner && (
+        <PublishBanner
+          publishState={publishState}
+          playerUrl={playerUrl}
+          quizTitle={quiz.title}
+          blockedOutcomes={blockedOutcomes}
+          onDismiss={() => setBannerDismissed(true)}
+        />
+      )}
+
+      {/* Workspace */}
+      <div className="flex min-h-0 flex-1">
+        {/* Sidebar, persistent at xl */}
+        <aside className="hidden w-[280px] flex-shrink-0 border-r border-[var(--hairline)] bg-white xl:block">
+          <StructureNav quiz={quiz} activeId={activeId} onNavigate={navigate} />
+        </aside>
+
+        {/* Sidebar drawer, below xl */}
+        {drawerOpen && (
+          <div className="fixed inset-0 z-30 xl:hidden">
+            <div className="absolute inset-0 bg-ink-950/30" onClick={() => setDrawerOpen(false)} />
+            <div className="absolute left-0 top-0 h-full w-[280px] border-r border-[var(--hairline)] bg-white shadow-xl">
+              <StructureNav quiz={quiz} activeId={activeId} onNavigate={navigate} />
+            </div>
+          </div>
+        )}
+
+        {/* Editor pane */}
+        <main
+          ref={editorRef}
+          className={`min-h-0 flex-1 overflow-y-auto bg-white px-5 py-8 sm:px-8 ${
+            mobileTab === "edit" ? "block" : "hidden"
+          } md:block md:border-r md:border-[var(--hairline)]`}
+        >
+          <div className="mx-auto max-w-2xl">
+            <QuizSettings
+              whatsapp={whatsapp}
+              branding={branding}
+              accent={accent}
+              hasPro={hasPro}
+              rating={ratingSession ? rating : undefined}
+              onRate={ratingSession ? recordRating : undefined}
+              onWhatsapp={editWhatsapp}
+              onBranding={editBranding}
+              onAccent={editAccent}
+              onDelete={deleteQuiz}
+            />
+            <div className="mt-8">
+              <QuizView quiz={quiz} onEdit={editField} onRegenerate={regenerate} />
+            </div>
+          </div>
+        </main>
+
+        {/* Preview pane */}
+        <section
+          className={`min-h-0 flex-1 overflow-y-auto bg-mist ${
+            mobileTab === "preview" ? "flex" : "hidden"
+          } flex-col items-center md:flex`}
+        >
+          <div className="flex w-full items-center justify-between px-5 pt-5 md:px-6">
+            <span className="font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--muted)]">
+              Live preview
+            </span>
+            <button
+              type="button"
+              onClick={() => setPreviewKey((k) => k + 1)}
+              className="rounded-full border border-[var(--hairline)] bg-white px-3 py-1 text-[11px] font-semibold text-[var(--muted)] transition-colors hover:text-[var(--foreground)]"
+            >
+              ↻ Restart
+            </button>
+          </div>
+          {/* Phone frame on md+, full-bleed on mobile */}
+          <div className="flex w-full flex-1 justify-center px-0 py-4 md:px-6 md:py-8">
+            <div className="w-full md:max-w-[360px] md:overflow-hidden md:rounded-[32px] md:bg-white md:shadow-float md:ring-1 md:ring-ink-950/5">
+              <QuizPlayer
+                key={previewKey}
+                preview
+                quizId={id}
+                title={quiz.title}
+                config={quiz.config}
+                branding={branding}
+                placement="before_results"
+                whatsapp={whatsapp || null}
+                accent={accent}
+              />
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function SaveStatus({ state }: { state: SaveState }) {
+  if (state === "saved")
+    return (
+      <span className="flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-600">
+        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+        Saved
+      </span>
+    );
+  if (state === "dirty")
+    return <span className="hidden text-[11px] font-medium text-[var(--muted)] sm:inline">Unsaved</span>;
+  if (state === "error")
+    return <span className="text-[11px] font-semibold text-rose-700">Save failed</span>;
+  return null;
+}
+
+function PublishBanner({
+  publishState,
+  playerUrl,
+  quizTitle,
+  blockedOutcomes,
+  onDismiss,
+}: {
+  publishState: PublishState;
+  playerUrl: string | null;
+  quizTitle: string;
+  blockedOutcomes: string[];
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="relative z-10 flex-shrink-0 border-b border-[var(--hairline)]">
       {publishState === "published" && playerUrl && (
-        <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-          <p className="text-sm font-semibold text-emerald-800">Your quiz is live.</p>
-          <a
-            href={playerUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-1 block break-all text-sm text-[var(--signal)] underline underline-offset-4"
-          >
-            {playerUrl}
-          </a>
-          <EmbedSnippet url={playerUrl} title={quiz.title} />
+        <div className="bg-emerald-50 px-5 py-4 sm:px-8">
+          <div className="mx-auto flex max-w-3xl items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-emerald-800">Your quiz is live.</p>
+              <a
+                href={playerUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-1 block break-all text-sm text-[var(--signal)] underline underline-offset-4"
+              >
+                {playerUrl}
+              </a>
+              <EmbedSnippet url={playerUrl} title={quizTitle} />
+            </div>
+            <button onClick={onDismiss} className="shrink-0 text-xs font-semibold text-emerald-700 underline">
+              Dismiss
+            </button>
+          </div>
         </div>
       )}
       {publishState === "blocked" && (
-        <div className="mb-6 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">
+        <div className="bg-amber-50 px-5 py-4 text-sm text-amber-800 sm:px-8">
           <p className="font-semibold">Check your button links.</p>
           <p className="mt-1">
-            A button link is optional, but if you add one it has to be a full web
-            address. Please fix: <strong>{blockedOutcomes.join(", ")}</strong>. Use a
-            full URL like https://calendly.com/you/intro-call, save, and publish again.
+            A button link is optional, but if you add one it has to be a full web address. Please fix:{" "}
+            <strong>{blockedOutcomes.join(", ")}</strong>. Use a full URL like
+            https://calendly.com/you/intro-call, save, and publish again.
           </p>
         </div>
       )}
       {publishState === "plan_blocked" && (
-        <div className="mb-6 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">
+        <div className="bg-amber-50 px-5 py-4 text-sm text-amber-800 sm:px-8">
           <p className="font-semibold">The free plan includes one live quiz.</p>
           <p className="mt-1">
-            You already have a quiz live. Upgrade to Pro to publish as many as you like, or
-            unpublish the other one first.
+            You already have a quiz live. Upgrade to Pro to publish as many as you like, or unpublish
+            the other one first.
           </p>
           <Link
             href="/pricing"
-            className="mt-3 inline-block rounded-full bg-ink-950 px-5 py-2.5 text-xs font-bold uppercase tracking-[0.1em] text-white transition-all hover:bg-signal-600 active:scale-[0.98]"
+            className="mt-3 inline-block rounded-full bg-[var(--signal)] px-5 py-2 text-xs font-bold uppercase tracking-[0.1em] text-white"
           >
             See Pro →
           </Link>
         </div>
       )}
       {publishState === "error" && (
-        <p className="mb-6 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+        <p className="bg-rose-50 px-5 py-4 text-sm text-rose-700 sm:px-8">
           Couldn’t publish just now. Please try again.
         </p>
       )}
-
-      {/* WhatsApp delivery — adds a "Continue on WhatsApp" button to results
-          (build spec §5.6, the EU/LATAM wedge). Optional, per quiz. */}
-      <div className="mb-8 rounded-2xl border border-[var(--hairline)] p-4">
-        <p className="text-sm font-semibold">WhatsApp delivery (optional)</p>
-        <p className="mt-1 text-xs text-[var(--muted)]">
-          Add your WhatsApp number and the results page shows a “Continue on WhatsApp”
-          button, prefilled with the visitor’s result. Use international format.
-        </p>
-        <input
-          type="tel"
-          value={whatsapp}
-          onChange={(e) => editWhatsapp(e.target.value)}
-          placeholder="+31 6 12345678"
-          className="mt-3 w-full max-w-xs rounded-full border border-[var(--hairline)] px-4 py-2.5 text-sm outline-none focus:border-[var(--signal)]"
-        />
-      </div>
-
-      {/* Branding (§5.9): removing the "Made with Treeflow" badge is Pro.
-          The player enforces the watermark server-side for free owners, so
-          this card is honest UI, not the security boundary. */}
-      <div className="mb-8 rounded-2xl border border-[var(--hairline)] p-4">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-sm font-semibold">Treeflow branding</p>
-            <p className="mt-1 text-xs text-[var(--muted)]">
-              {hasPro
-                ? "Hide the “Made with Treeflow” badge on your published quiz."
-                : "Removing the “Made with Treeflow” badge is a Pro feature."}
-            </p>
-          </div>
-          {hasPro ? (
-            <label className="flex shrink-0 cursor-pointer items-center gap-2 text-xs font-semibold">
-              <input
-                type="checkbox"
-                checked={!branding}
-                onChange={(e) => editBranding(!e.target.checked)}
-                className="h-4 w-4 accent-[var(--signal)]"
-              />
-              Remove badge
-            </label>
-          ) : (
-            <Link
-              href="/pricing"
-              className="shrink-0 rounded-full border border-[var(--hairline)] px-4 py-2 text-xs font-semibold transition-colors hover:border-[var(--signal)] hover:text-[var(--signal)]"
-            >
-              Upgrade to Pro
-            </Link>
-          )}
-        </div>
-      </div>
-
-      {/* Brand color (design-pass §2.4): the accent applied to the published
-          player. Optional — null renders the neutral ink default. */}
-      <div className="mb-8 rounded-2xl border border-[var(--hairline)] p-4">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-sm font-semibold">Brand color</p>
-            <p className="mt-1 text-xs text-[var(--muted)]">
-              Sets the accent on your published quiz (progress, selected answers, and buttons).
-              Leave it on the default for a clean neutral look.
-            </p>
-          </div>
-          <div className="flex shrink-0 items-center gap-3">
-            {accent && (
-              <button
-                type="button"
-                onClick={() => editAccent(null)}
-                className="text-xs font-semibold text-[var(--muted)] underline underline-offset-4 transition-colors hover:text-[var(--signal)]"
-              >
-                Reset
-              </button>
-            )}
-            <input
-              type="color"
-              value={accent ?? "#0a0a0a"}
-              onChange={(e) => editAccent(e.target.value)}
-              aria-label="Brand color"
-              className="h-9 w-9 cursor-pointer rounded-lg border border-[var(--hairline)] bg-transparent p-0.5"
-            />
-          </div>
-        </div>
-      </div>
-
-      <QuizView
-        quiz={quiz}
-        onEdit={editField}
-        onRegenerate={regenerate}
-        rating={ratingSession ? rating : undefined}
-        onRate={ratingSession ? recordRating : undefined}
-      />
-
-      <div className="mt-12 border-t border-[var(--hairline)] pt-6">
-        {confirmDelete ? (
-          <div className="flex flex-col gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm text-rose-800">
-              Delete this quiz? It moves to Recently deleted for 30 days, then it&rsquo;s gone for
-              good. Your leads are kept until then.
-            </p>
-            <div className="flex shrink-0 gap-2">
-              <button
-                type="button"
-                onClick={() => setConfirmDelete(false)}
-                disabled={deleting}
-                className="rounded-full border border-[var(--hairline)] bg-white px-4 py-2 text-xs font-bold uppercase tracking-[0.1em] transition-colors hover:bg-ink-50 disabled:opacity-40"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={deleteQuiz}
-                disabled={deleting}
-                className="rounded-full bg-rose-600 px-4 py-2 text-xs font-bold uppercase tracking-[0.1em] text-white transition-colors hover:bg-rose-700 disabled:opacity-40"
-              >
-                {deleting ? "Deleting…" : "Delete quiz"}
-              </button>
-            </div>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setConfirmDelete(true)}
-            className="text-xs font-semibold text-rose-700 underline underline-offset-4 transition-colors hover:text-rose-800"
-          >
-            Delete this quiz
-          </button>
-        )}
-      </div>
-    </main>
-  );
-}
-
-// Secondary publish option (§5.4): an iframe of the hosted player the owner can
-// paste into their own site. Plain iframe on purpose, no injected script, so it
-// is bulletproof across WordPress / Webflow / Squarespace / Wix. Fixed height
-// with internal scroll keeps it predictable without a resize handshake.
-function EmbedSnippet({ url, title }: { url: string; title: string }) {
-  const [copied, setCopied] = useState(false);
-  const safeTitle = (title || "Quiz").replace(/"/g, "'");
-  const snippet = `<iframe src="${url}" title="${safeTitle}" loading="lazy" style="width:100%;height:760px;border:0;border-radius:16px"></iframe>`;
-
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(snippet);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // clipboard blocked — the field is selectable as a fallback
-    }
-  }
-
-  return (
-    <div className="mt-4 border-t border-emerald-200/70 pt-4">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-semibold text-emerald-800">Want it on your own site?</p>
-        <button
-          type="button"
-          onClick={copy}
-          className="shrink-0 rounded-full border border-emerald-300 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.08em] text-emerald-800 transition-colors hover:bg-emerald-100"
-        >
-          {copied ? "Copied" : "Copy code"}
-        </button>
-      </div>
-      <p className="mt-1 text-xs text-emerald-700">
-        Paste this where you want the quiz to appear. Works on WordPress, Webflow, Squarespace, Wix,
-        and most site builders.
-      </p>
-      <textarea
-        readOnly
-        value={snippet}
-        rows={3}
-        onClick={(e) => e.currentTarget.select()}
-        className="mt-2 w-full resize-none rounded-lg border border-emerald-200 bg-white p-3 font-mono text-[11px] leading-relaxed text-ink-700 outline-none"
-      />
     </div>
   );
 }
