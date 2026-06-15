@@ -19,8 +19,8 @@ type PublishState =
   | "plan_blocked"
   | "error";
 
-// Saved-quiz editor. Persistence is an explicit Save (PATCH) — not
-// per-keystroke autosave — per the build plan. Just-generated quizzes arrive
+// Saved-quiz editor. Persistence is an explicit Save (PATCH), not
+// per-keystroke autosave, per the build plan. Just-generated quizzes arrive
 // with ?new=1&sid=<session> and show the one-tap first-impression rating
 // (output_rating instrumentation, moved here from the landing page).
 export default function EditQuizClient({
