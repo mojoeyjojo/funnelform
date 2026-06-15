@@ -153,7 +153,7 @@ export function QuizView({
         ))}
       </div>
 
-      {/* Email sequence — display-only preview (build spec §5.3) */}
+      {/* Email sequence: display-only preview (build spec §5.3) */}
       <div id="sec-emails" data-nav-section className="scroll-mt-6 space-y-3">
         <Label>Follow-up sequence ({config.email_sequence.length} emails) · preview</Label>
         <p className="text-xs text-[var(--muted)]">We drafted a follow-up sequence. Copy it into your email tool.</p>

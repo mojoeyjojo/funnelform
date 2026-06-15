@@ -3,13 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { QuizConfig } from "@/lib/schema";
 
-// The public quiz player — NOT our twilight aesthetic (STYLE.md §6a). Clean,
+// The public quiz player, NOT our twilight aesthetic (STYLE.md §6a). Clean,
 // neutral, mobile-first; the owner's surface. Fires the visitor funnel
 // (view → start → question_answered → completed → lead_captured) and captures a
 // lead before revealing the outcome (default placement).
 type Phase = "welcome" | "questions" | "lead" | "outcome";
 
-const DEFAULT_ACCENT = "#0a0a0a"; // neutral ink — the player is the owner's surface, not our brand
+const DEFAULT_ACCENT = "#0a0a0a"; // neutral ink, the player is the owner's surface, not our brand
 
 // Validate + normalize the owner's stored accent (the editor color input yields
 // #rrggbb; anything malformed falls back to the neutral default).
