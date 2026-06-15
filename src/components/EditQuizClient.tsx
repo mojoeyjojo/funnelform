@@ -63,6 +63,7 @@ export default function EditQuizClient({
   const [mobileTab, setMobileTab] = useState<"edit" | "preview">("edit");
   const [previewKey, setPreviewKey] = useState(0); // bump to restart the preview
   const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false); // phone overflow menu (Save / Unpublish)
   const editorRef = useRef<HTMLDivElement>(null);
 
   // First-impression rating, only for just-generated quizzes (?new=1).
@@ -92,6 +93,18 @@ export default function EditQuizClient({
     sections.forEach((s) => observer.observe(s));
     return () => observer.disconnect();
   }, [quiz.config.questions.length, quiz.config.outcomes.length]);
+
+  // Escape closes the transient overlays (structure drawer, phone overflow menu).
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setDrawerOpen(false);
+        setMoreOpen(false);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   function navigate(id: string) {
     const el = editorRef.current?.querySelector(`#${CSS.escape(id)}`);
@@ -320,6 +333,57 @@ export default function EditQuizClient({
 
         <div className="ml-auto flex items-center gap-2 md:ml-3">
           <SaveStatus state={state} />
+
+          {/* Phone overflow menu: Save + Unpublish live here below sm, where the
+              inline buttons are hidden, so a phone can still save a draft or take
+              a quiz offline. */}
+          <div className="relative sm:hidden">
+            <button
+              type="button"
+              onClick={() => setMoreOpen((o) => !o)}
+              aria-haspopup="menu"
+              aria-expanded={moreOpen}
+              aria-label="More actions"
+              className="rounded-full border border-[var(--hairline)] px-3 py-1.5 text-xs font-bold transition-colors hover:border-ink-300"
+            >
+              ⋯
+            </button>
+            {moreOpen && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setMoreOpen(false)} />
+                <div
+                  role="menu"
+                  className="absolute right-0 z-40 mt-2 w-44 overflow-hidden rounded-2xl border border-[var(--hairline)] bg-white py-1 shadow-xl"
+                >
+                  <button
+                    role="menuitem"
+                    onClick={() => {
+                      setMoreOpen(false);
+                      void save();
+                    }}
+                    disabled={state === "saving" || state === "clean" || state === "saved"}
+                    className="block w-full px-4 py-2.5 text-left text-sm font-semibold transition-colors hover:bg-ink-50 disabled:opacity-40"
+                  >
+                    {state === "saving" ? "Saving…" : "Save changes"}
+                  </button>
+                  {(publishState === "published" || publishState === "unpublishing") && (
+                    <button
+                      role="menuitem"
+                      onClick={() => {
+                        setMoreOpen(false);
+                        void unpublish();
+                      }}
+                      disabled={publishState === "unpublishing"}
+                      className="block w-full px-4 py-2.5 text-left text-sm font-semibold text-rose-700 transition-colors hover:bg-rose-50 disabled:opacity-40"
+                    >
+                      {publishState === "unpublishing" ? "Taking offline…" : "Unpublish"}
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+
           <button
             onClick={save}
             disabled={state === "saving" || state === "clean" || state === "saved"}
@@ -331,7 +395,7 @@ export default function EditQuizClient({
             <button
               onClick={unpublish}
               disabled={publishState === "unpublishing"}
-              className="hidden rounded-full border border-[var(--hairline)] px-4 py-1.5 text-xs font-bold uppercase tracking-[0.08em] transition-colors hover:border-rose-300 hover:text-rose-700 disabled:opacity-40 lg:block"
+              className="hidden rounded-full border border-[var(--hairline)] px-4 py-1.5 text-xs font-bold uppercase tracking-[0.08em] transition-colors hover:border-rose-300 hover:text-rose-700 disabled:opacity-40 sm:block"
             >
               {publishState === "unpublishing" ? "Offline…" : "Unpublish"}
             </button>
@@ -370,7 +434,12 @@ export default function EditQuizClient({
 
         {/* Sidebar drawer, below xl */}
         {drawerOpen && (
-          <div className="fixed inset-0 z-30 xl:hidden">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Quiz structure"
+            className="fixed inset-0 z-30 xl:hidden"
+          >
             <div className="absolute inset-0 bg-ink-950/30" onClick={() => setDrawerOpen(false)} />
             <div className="absolute left-0 top-0 h-full w-[280px] border-r border-[var(--hairline)] bg-white shadow-xl">
               <StructureNav quiz={quiz} activeId={activeId} onNavigate={navigate} />
