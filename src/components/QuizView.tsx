@@ -45,7 +45,12 @@ export function QuizView({
       <div className="space-y-5">
         <Label>Questions ({config.questions.length})</Label>
         {config.questions.map((q, qi) => (
-          <div key={q.id} className="rounded-2xl border border-[var(--hairline)] p-4">
+          <div
+            key={q.id}
+            id={`sec-q-${qi}`}
+            data-nav-section
+            className="scroll-mt-6 rounded-2xl border border-[var(--hairline)] p-4"
+          >
             {onRegenerate && !readOnly && (
               <div className="mb-2 flex justify-end">
                 <RegenButton onRun={() => onRegenerate("question", qi)} />
@@ -81,7 +86,12 @@ export function QuizView({
       <div className="space-y-5">
         <Label>Scored outcomes ({config.outcomes.length})</Label>
         {config.outcomes.map((out, oi) => (
-          <div key={out.id} className="rounded-2xl border border-[var(--hairline)] p-4">
+          <div
+            key={out.id}
+            id={`sec-o-${oi}`}
+            data-nav-section
+            className="scroll-mt-6 rounded-2xl border border-[var(--hairline)] p-4"
+          >
             {onRegenerate && !readOnly && (
               <div className="mb-2 flex justify-end">
                 <RegenButton onRun={() => onRegenerate("outcome", oi)} />
@@ -144,7 +154,7 @@ export function QuizView({
       </div>
 
       {/* Email sequence — display-only preview (build spec §5.3) */}
-      <div className="space-y-3">
+      <div id="sec-emails" data-nav-section className="scroll-mt-6 space-y-3">
         <Label>Follow-up sequence ({config.email_sequence.length} emails) · preview</Label>
         <p className="text-xs text-[var(--muted)]">We drafted a follow-up sequence. Copy it into your email tool.</p>
         {config.email_sequence.map((m, i) => (
