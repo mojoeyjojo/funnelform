@@ -6,7 +6,7 @@ import {
 
 export const runtime = "nodejs";
 
-// DELETE /api/account — GDPR erasure. Permanently removes the signed-in user's
+// DELETE /api/account: GDPR erasure. Permanently removes the signed-in user's
 // account and every row tied to it. Steps 2-6 are best-effort: a leftover row
 // must never block the actual account removal, so each is wrapped on its own and
 // failures are logged but tolerated. Step 7 (auth user deletion) is the one that
@@ -24,7 +24,7 @@ export async function DELETE() {
   const admin = createSupabaseAdminClient();
   const userId = user.id;
 
-  // Look up every quiz id owned by this user, including soft-deleted ones — we
+  // Look up every quiz id owned by this user, including soft-deleted ones, we
   // are erasing everything, so deleted_at is deliberately not filtered.
   let quizIds: string[] = [];
   try {
