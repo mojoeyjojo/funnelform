@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import { sendOwnerLeadNotification } from "@/lib/email";
+import { isSafeWebhookTarget } from "@/lib/ssrf";
 
 export const runtime = "nodejs";
 
@@ -75,7 +76,7 @@ export async function POST(request: Request) {
     const outcomes = (quiz.config as { outcomes?: { id: string; name: string }[] } | null)?.outcomes ?? [];
     const outcomeName = outcomes.find((o) => o.id === outcome_id)?.name ?? null;
 
-    // Owner-notification email — the real Claim-3 proof (build spec §9). Look up
+    // Owner-notification email, the real Claim-3 proof (build spec §9). Look up
     // the owner's email, send, and record `owner_notified` so the loop-closing
     // is observable on-platform. Never block the visitor on this.
     try {
@@ -112,7 +113,9 @@ export async function POST(request: Request) {
     // slow or failing endpoint never affects the visitor response. Record
     // `owner_notified` on a 2xx so the delivery is observable on-platform.
     const webhook = (quiz.delivery as { webhook?: string } | null)?.webhook;
-    if (typeof webhook === "string" && (webhook.startsWith("http://") || webhook.startsWith("https://"))) {
+    // SSRF guard: only POST to a public https target (rejects metadata IPs,
+    // localhost, and private ranges, resolving the host first). See lib/ssrf.
+    if (typeof webhook === "string" && webhook && (await isSafeWebhookTarget(webhook))) {
       try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 5000);
@@ -120,6 +123,9 @@ export async function POST(request: Request) {
           const res = await fetch(webhook, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
+            // Do not auto-follow redirects: a 3xx could point at an internal
+            // host and bypass the pre-flight SSRF check.
+            redirect: "manual",
             body: JSON.stringify({
               quiz_id,
               name: cleanName,

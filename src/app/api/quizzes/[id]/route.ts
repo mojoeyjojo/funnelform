@@ -3,13 +3,14 @@ import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { QuizConfigSchema } from "@/lib/schema";
 import { effectivePlan, fetchPlanProfile, hasProFeatures } from "@/lib/plan";
+import { isWellFormedWebhookUrl } from "@/lib/ssrf";
 
 export const runtime = "nodejs";
 
 // Editor persistence: PATCH a draft's title, config, WhatsApp delivery number,
 // and/or the branding toggle. config is re-validated against the versioned
 // quiz_config contract. `whatsapp` is stored in the `delivery` jsonb (empty
-// string clears it). `branding_enabled: false` is a Pro feature (§5.9) — and
+// string clears it). `branding_enabled: false` is a Pro feature (§5.9), and
 // the player enforces the watermark server-side regardless, so this gate is
 // UX, not security. RLS guarantees a user can only update their own rows.
 const UpdateQuizSchema = z
@@ -99,7 +100,17 @@ export async function PATCH(
     const w = (parsed.data.whatsapp ?? "").trim();
     const hook = (parsed.data.webhook ?? "").trim();
     if (w) delivery.whatsapp = w;
-    if (hook) delivery.webhook = hook;
+    if (hook) {
+      // Reject an unsafe webhook at store time (https only, no IP-literal in a
+      // private range). The send path re-checks via DNS; this is fast feedback.
+      if (!isWellFormedWebhookUrl(hook)) {
+        return NextResponse.json(
+          { error: "Webhook must be a valid https URL (not a local or private address)." },
+          { status: 422 },
+        );
+      }
+      delivery.webhook = hook;
+    }
     update.delivery = delivery;
   }
 
@@ -117,7 +128,7 @@ export async function PATCH(
   return NextResponse.json({ quiz: data });
 }
 
-// GET /api/quizzes/[id] — fetch one quiz (RLS-scoped to owner).
+// GET /api/quizzes/[id]: fetch one quiz (RLS-scoped to owner).
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -143,7 +154,7 @@ export async function GET(
   return NextResponse.json({ quiz: data });
 }
 
-// DELETE /api/quizzes/[id] — soft delete. Stamps deleted_at, which drops the
+// DELETE /api/quizzes/[id]: soft delete. Stamps deleted_at, which drops the
 // quiz from the workspace and takes it offline (player + lead capture filter on
 // deleted_at), but the row and its leads survive a 30-day grace period (see the
 // purge cron) so an accidental delete is recoverable. RLS scopes this to owner.
