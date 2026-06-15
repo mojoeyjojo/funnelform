@@ -11,6 +11,7 @@ import {
 import AuthOverlay from "@/components/AuthOverlay";
 import WorkspaceQuizzes, { type QuizCard } from "@/components/WorkspaceQuizzes";
 import AccountMenu from "@/components/AccountMenu";
+import DeleteAccount from "@/components/DeleteAccount";
 
 export const runtime = "nodejs";
 
@@ -142,6 +143,12 @@ export default async function DashboardPage({
           meter={isGuest ? null : { used: monthlyLeads, cap, atCap }}
           deletedCount={deletedCount ?? 0}
         />
+
+        {!isGuest && (
+          <div className="mt-16 border-t border-[var(--hairline)] pt-6">
+            <DeleteAccount />
+          </div>
+        )}
       </main>
 
       {showAuthOverlay && (
