@@ -17,6 +17,7 @@ const UpdateQuizSchema = z
     title: z.string().min(1).optional(),
     config: QuizConfigSchema.optional(),
     whatsapp: z.string().max(32).optional(),
+    webhook: z.string().max(2000).optional(),
     branding_enabled: z.boolean().optional(),
     // Brand color: a hex string, or null to clear back to the neutral default.
     theme_accent: z
@@ -30,6 +31,7 @@ const UpdateQuizSchema = z
       v.title !== undefined ||
       v.config !== undefined ||
       v.whatsapp !== undefined ||
+      v.webhook !== undefined ||
       v.branding_enabled !== undefined ||
       v.theme_accent !== undefined,
     { message: "Nothing to update" },
@@ -83,16 +85,22 @@ export async function PATCH(
     }
   }
 
-  // Build the column update explicitly — `whatsapp` maps into the delivery jsonb,
-  // it is not its own column, so it must not be spread in.
+  // Build the column update explicitly. `whatsapp` and `webhook` both map into
+  // the delivery jsonb, they are not their own columns, so they must not be
+  // spread in. The editor sends both current values on save, so a full rebuild
+  // is correct and neither field clobbers the other.
   const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (parsed.data.title !== undefined) update.title = parsed.data.title;
   if (parsed.data.config !== undefined) update.config = parsed.data.config;
   if (parsed.data.branding_enabled !== undefined) update.branding_enabled = parsed.data.branding_enabled;
   if (parsed.data.theme_accent !== undefined) update.theme_accent = parsed.data.theme_accent;
-  if (parsed.data.whatsapp !== undefined) {
-    const w = parsed.data.whatsapp.trim();
-    update.delivery = w ? { whatsapp: w } : {};
+  if (parsed.data.whatsapp !== undefined || parsed.data.webhook !== undefined) {
+    const delivery: Record<string, string> = {};
+    const w = (parsed.data.whatsapp ?? "").trim();
+    const hook = (parsed.data.webhook ?? "").trim();
+    if (w) delivery.whatsapp = w;
+    if (hook) delivery.webhook = hook;
+    update.delivery = delivery;
   }
 
   const { data, error } = await supabase

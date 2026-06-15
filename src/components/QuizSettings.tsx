@@ -6,23 +6,27 @@ import type { OutputRating } from "@/lib/types";
 
 export function QuizSettings({
   whatsapp,
+  webhook,
   branding,
   accent,
   hasPro,
   rating,
   onRate,
   onWhatsapp,
+  onWebhook,
   onBranding,
   onAccent,
   onDelete,
 }: {
   whatsapp: string;
+  webhook: string;
   branding: boolean;
   accent: string | null;
   hasPro: boolean;
   rating?: OutputRating | null;
   onRate?: (r: OutputRating) => void;
   onWhatsapp: (v: string) => void;
+  onWebhook: (v: string) => void;
   onBranding: (showBadge: boolean) => void;
   onAccent: (v: string | null) => void;
   onDelete: () => Promise<void> | void;
@@ -59,6 +63,21 @@ export function QuizSettings({
               value={whatsapp}
               onChange={(e) => onWhatsapp(e.target.value)}
               placeholder="+31 6 12345678"
+              className="mt-3 w-full max-w-xs rounded-full border border-[var(--hairline)] px-4 py-2.5 text-sm outline-none focus:border-[var(--signal)]"
+            />
+          </div>
+
+          {/* Webhook delivery (Zapier / Make / raw catch hooks) */}
+          <div className="rounded-2xl border border-[var(--hairline)] p-4">
+            <p className="text-sm font-semibold">Webhook (optional)</p>
+            <p className="mt-1 text-xs text-[var(--muted)]">
+              We POST each new lead as JSON to this URL. Works with Zapier or Make catch hooks.
+            </p>
+            <input
+              type="url"
+              value={webhook}
+              onChange={(e) => onWebhook(e.target.value)}
+              placeholder="https://hooks.zapier.com/..."
               className="mt-3 w-full max-w-xs rounded-full border border-[var(--hairline)] px-4 py-2.5 text-sm outline-none focus:border-[var(--signal)]"
             />
           </div>

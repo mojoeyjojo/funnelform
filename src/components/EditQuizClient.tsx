@@ -31,6 +31,7 @@ export default function EditQuizClient({
   initialStatus,
   initialSlug,
   initialWhatsapp,
+  initialWebhook,
   initialBranding,
   initialAccent,
   hasPro,
@@ -42,6 +43,7 @@ export default function EditQuizClient({
   initialStatus: string;
   initialSlug: string | null;
   initialWhatsapp: string;
+  initialWebhook: string;
   initialBranding: boolean;
   initialAccent: string | null;
   hasPro: boolean;
@@ -49,6 +51,7 @@ export default function EditQuizClient({
 }) {
   const [quiz, setQuiz] = useState<GeneratedQuiz>({ title: initialTitle, config: initialConfig });
   const [whatsapp, setWhatsapp] = useState(initialWhatsapp);
+  const [webhook, setWebhook] = useState(initialWebhook);
   const [branding, setBranding] = useState(initialBranding);
   const [accent, setAccent] = useState<string | null>(initialAccent);
   const [state, setState] = useState<SaveState>("clean");
@@ -146,6 +149,11 @@ export default function EditQuizClient({
     setState("dirty");
   }
 
+  function editWebhook(value: string) {
+    setWebhook(value);
+    setState("dirty");
+  }
+
   function editBranding(showBadge: boolean) {
     setBranding(showBadge);
     setState("dirty");
@@ -207,6 +215,7 @@ export default function EditQuizClient({
           title: quiz.title,
           config: quiz.config,
           whatsapp,
+          webhook,
           theme_accent: accent,
           // Only Pro can flip this; free accounts never send it, so a save
           // can't 403 on the branding gate.
@@ -447,12 +456,14 @@ export default function EditQuizClient({
             {isLive && playerUrl && <ShareCard playerUrl={playerUrl} quizTitle={quiz.title} />}
             <QuizSettings
               whatsapp={whatsapp}
+              webhook={webhook}
               branding={branding}
               accent={accent}
               hasPro={hasPro}
               rating={ratingSession ? rating : undefined}
               onRate={ratingSession ? recordRating : undefined}
               onWhatsapp={editWhatsapp}
+              onWebhook={editWebhook}
               onBranding={editBranding}
               onAccent={editAccent}
               onDelete={deleteQuiz}

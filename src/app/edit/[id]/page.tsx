@@ -62,6 +62,7 @@ export default async function EditPage({
         initialStatus={data.status ?? "draft"}
         initialSlug={data.slug ?? null}
         initialWhatsapp={initialWhatsapp}
+        initialWebhook={(data.delivery as { webhook?: string } | null)?.webhook ?? ""}
         initialBranding={data.branding_enabled !== false}
         initialAccent={(data.theme_accent as string | null) ?? null}
         hasPro={hasProFeatures(plan)}

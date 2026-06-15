@@ -43,7 +43,7 @@ export async function POST(request: Request) {
     // The quiz must be published; pull owner + content for the FK and notification.
     const { data: quiz } = await admin
       .from("quizzes")
-      .select("owner_id, status, title, config")
+      .select("owner_id, status, title, config, delivery")
       .eq("id", quiz_id)
       .is("deleted_at", null)
       .maybeSingle();
@@ -71,17 +71,19 @@ export async function POST(request: Request) {
       session_id,
     });
 
+    // Resolve the result name once: both the email and the webhook payload use it.
+    const outcomes = (quiz.config as { outcomes?: { id: string; name: string }[] } | null)?.outcomes ?? [];
+    const outcomeName = outcomes.find((o) => o.id === outcome_id)?.name ?? null;
+
     // Owner-notification email — the real Claim-3 proof (build spec §9). Look up
-    // the owner's email + outcome name, send, and record `owner_notified` so the
-    // loop-closing is observable on-platform. Never block the visitor on this.
+    // the owner's email, send, and record `owner_notified` so the loop-closing
+    // is observable on-platform. Never block the visitor on this.
     try {
       const { data: owner } = await admin
         .from("profiles")
         .select("email")
         .eq("id", quiz.owner_id)
         .maybeSingle();
-      const outcomes = (quiz.config as { outcomes?: { id: string; name: string }[] } | null)?.outcomes ?? [];
-      const outcomeName = outcomes.find((o) => o.id === outcome_id)?.name ?? null;
       if (owner?.email) {
         const sent = await sendOwnerLeadNotification({
           ownerEmail: owner.email,
@@ -103,6 +105,47 @@ export async function POST(request: Request) {
       }
     } catch (notifyErr) {
       console.error("[leads] owner notify failed:", notifyErr instanceof Error ? notifyErr.message : notifyErr);
+    }
+
+    // Owner-configured webhook delivery (Zapier / Make / raw catch hooks). POST
+    // the lead JSON, fire-and-forget, on its own try/catch with a 5s timeout so a
+    // slow or failing endpoint never affects the visitor response. Record
+    // `owner_notified` on a 2xx so the delivery is observable on-platform.
+    const webhook = (quiz.delivery as { webhook?: string } | null)?.webhook;
+    if (typeof webhook === "string" && (webhook.startsWith("http://") || webhook.startsWith("https://"))) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+        try {
+          const res = await fetch(webhook, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              quiz_id,
+              name: cleanName,
+              email,
+              phone: phone ?? null,
+              answers,
+              outcome_id: outcome_id ?? null,
+              outcome_name: outcomeName,
+              created_at: new Date().toISOString(),
+            }),
+            signal: controller.signal,
+          });
+          if (res.ok) {
+            await admin.from("builder_events").insert({
+              owner_id: quiz.owner_id,
+              quiz_id,
+              event_type: "owner_notified",
+              metadata: { channel: "webhook" },
+            });
+          }
+        } finally {
+          clearTimeout(timeout);
+        }
+      } catch (hookErr) {
+        console.error("[leads] webhook delivery failed:", hookErr instanceof Error ? hookErr.message : hookErr);
+      }
     }
   } catch (err) {
     console.error("[leads] error:", err instanceof Error ? err.message : err);
