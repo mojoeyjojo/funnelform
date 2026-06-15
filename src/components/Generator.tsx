@@ -16,6 +16,7 @@ import { saveQuizAsCurrentUser, newQuizEditorUrl } from "@/lib/saveQuiz";
 import { funnelToSignup } from "@/lib/pendingPrompt";
 import { Label } from "./QuizView";
 import MarketingBody from "./MarketingBody";
+import { capture } from "@/lib/analytics";
 
 // The pre-generation entry flow is a small in-place card stepper. We collect the
 // user's GOAL and business context BEFORE firing the AI pipeline, because the
@@ -206,6 +207,7 @@ export default function Generator({
 
   // ---- Generation pipeline (unchanged contract: streams real NDJSON events) --
   async function runGenerate(payload: Record<string, unknown>, src: string | null) {
+    capture("generate_started", { flow });
     lastRunRef.current = { payload, src };
     setStage(null);
     setSaving(false);
@@ -276,6 +278,7 @@ export default function Generator({
   // guest session if needed) and opened in the editor, where the rest live.
   async function saveAndOpen(generated: GeneratedQuiz, src: string | null) {
     setQuiz(generated);
+    capture("generate_succeeded");
     setSaving(true);
     await recordClientEvent("first_output_viewed");
     const id = await saveQuizAsCurrentUser({ quiz: generated, sourceUrl: src });

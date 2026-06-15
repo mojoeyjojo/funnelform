@@ -8,6 +8,7 @@ import { QuizView } from "./QuizView";
 import { QuizSettings, EmbedSnippet } from "./QuizSettings";
 import { StructureNav } from "./StructureNav";
 import QuizPlayer from "./QuizPlayer";
+import { capture } from "@/lib/analytics";
 
 type SaveState = "clean" | "dirty" | "saving" | "saved" | "error";
 type PublishState =
@@ -120,6 +121,7 @@ export default function EditQuizClient({
   async function recordRating(r: OutputRating) {
     if (rating) return;
     setRating(r);
+    capture("output_rating", { rating: r });
     try {
       await fetch("/api/events", {
         method: "POST",
@@ -255,6 +257,7 @@ export default function EditQuizClient({
       if (res.ok) {
         setSlug(data.slug);
         setPublishState("published");
+        capture("published", { quiz_id: id });
       } else if (data.reason === "guest") {
         // Server-side guest gate (in case the client state was stale).
         window.location.href = "/login?next=" + encodeURIComponent(`/edit/${id}`);

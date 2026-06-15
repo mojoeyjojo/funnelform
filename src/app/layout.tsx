@@ -3,6 +3,7 @@ import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import "./globals.css";
 import TransferCompleter from "@/components/TransferCompleter";
+import { PostHogProvider } from "@/components/PostHogProvider";
 
 // Type system: Geist for all UI text (variable weight, covers 400–900) and
 // Geist Mono for technical / numeric labels. One family, no serif, no accent.
@@ -19,7 +20,7 @@ export default function RootLayout({
     <html lang="en" className={`h-full ${GeistSans.variable} ${GeistMono.variable}`}>
       <body className="min-h-full">
         <TransferCompleter />
-        {children}
+        <PostHogProvider>{children}</PostHogProvider>
       </body>
     </html>
   );
