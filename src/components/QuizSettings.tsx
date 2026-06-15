@@ -208,7 +208,7 @@ function RatingBar({
   );
 }
 
-// Embeddable iframe snippet (section 5.4) — shown in the publish banner (later task).
+// Embeddable iframe snippet (section 5.4), shown in the publish banner (later task).
 export function EmbedSnippet({ url, title }: { url: string; title: string }) {
   const [copied, setCopied] = useState(false);
   const safeTitle = (title || "Quiz").replace(/"/g, "'");
