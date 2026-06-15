@@ -71,12 +71,12 @@ export default function EditQuizClient({
   const editorRef = useRef<HTMLDivElement>(null);
 
   // First-impression rating, only for just-generated quizzes (?new=1).
-  const [ratingSession, setRatingSession] = useState<string | null>(null);
+  const [ratingSession] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    const p = new URLSearchParams(window.location.search);
+    return p.get("new") === "1" ? (p.get("sid") ?? "unknown") : null;
+  });
   const [rating, setRating] = useState<OutputRating | null>(null);
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("new") === "1") setRatingSession(params.get("sid") ?? "unknown");
-  }, []);
 
   // Scroll-spy: highlight the sidebar item for the section nearest the top of
   // the editor pane. Re-observes when the question/outcome counts change.
@@ -287,8 +287,14 @@ export default function EditQuizClient({
   }
 
   async function deleteQuiz() {
-    const res = await fetch(`/api/quizzes/${id}`, { method: "DELETE" });
+    let res: Response;
+    try {
+      res = await fetch(`/api/quizzes/${id}`, { method: "DELETE" });
+    } catch {
+      throw new Error("delete_failed");
+    }
     if (res.ok) window.location.href = "/dashboard";
+    else throw new Error("delete_failed");
   }
 
   const playerUrl = slug

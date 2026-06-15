@@ -68,18 +68,23 @@ export default function QuizPlayer({
   const [qIndex, setQIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const fired = useRef<Set<string>>(new Set());
-  const sessionId = useRef<string>("");
+  const [sessionId, setSessionId] = useState<string>("");
 
-  // Stable anonymous visitor session id for quiz_events.
-  if (!sessionId.current && typeof window !== "undefined") {
+  // Stable anonymous visitor session id for quiz_events. Initialized after mount
+  // (not during render) to keep render pure.
+  useEffect(() => {
     const existing = window.localStorage.getItem("ff_visitor_session");
-    sessionId.current =
+    const id =
       existing ||
       (typeof crypto !== "undefined" && "randomUUID" in crypto
         ? crypto.randomUUID()
         : `v-${Date.now()}-${Math.floor(Math.random() * 1e6)}`);
-    window.localStorage.setItem("ff_visitor_session", sessionId.current);
-  }
+    window.localStorage.setItem("ff_visitor_session", id);
+    // The id depends on browser-only APIs (localStorage, crypto) so it can't be
+    // a render-phase lazy initializer; setting it here, once on mount, is correct.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSessionId(id);
+  }, []);
 
   function fireEvent(
     event_type: string,
@@ -99,17 +104,18 @@ export default function QuizPlayer({
         quiz_id: quizId,
         event_type,
         question_id,
-        session_id: sessionId.current,
+        session_id: sessionId,
         outcome_id,
       }),
     }).catch(() => {});
   }
 
-  // view (once on mount)
+  // view (once, after the session id is ready)
   useEffect(() => {
+    if (!sessionId) return;
     fireEvent("view", undefined, "view");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [sessionId]);
 
   // Compute the outcome from accumulated tag scores vs each outcome's
   // match_logic. Extracted so `answer()` can resolve the outcome for the FINAL
@@ -191,7 +197,7 @@ export default function QuizPlayer({
             quizId={quizId}
             answers={answers}
             outcomeId={outcome?.id}
-            sessionId={sessionId.current}
+            sessionId={sessionId}
             preview={preview}
             onDone={() => setPhase("outcome")}
           />

@@ -34,6 +34,7 @@ export function QuizSettings({
   const [open, setOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState(false);
 
   return (
     <div id="sec-settings" data-nav-section className="scroll-mt-6">
@@ -148,36 +149,49 @@ export function QuizSettings({
           {/* Delete */}
           <div className="border-t border-[var(--hairline)] pt-4">
             {confirmDelete ? (
-              <div className="flex flex-col gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-sm text-rose-800">
-                  Delete this quiz? It moves to Recently deleted for 30 days, then it&rsquo;s gone for
-                  good. Your leads are kept until then.
-                </p>
-                <div className="flex shrink-0 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setConfirmDelete(false)}
-                    disabled={deleting}
-                    className="rounded-full border border-[var(--hairline)] bg-white px-4 py-2 text-xs font-bold uppercase tracking-[0.1em] transition-colors hover:bg-[var(--e-surface-3)] disabled:opacity-40"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      setDeleting(true);
-                      try {
-                        await onDelete();
-                      } finally {
-                        setDeleting(false);
-                      }
-                    }}
-                    disabled={deleting}
-                    className="rounded-full bg-rose-600 px-4 py-2 text-xs font-bold uppercase tracking-[0.1em] text-white transition-colors hover:bg-rose-700 disabled:opacity-40"
-                  >
-                    {deleting ? "Deleting…" : "Delete quiz"}
-                  </button>
+              <div className="flex flex-col gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm text-rose-800">
+                    Delete this quiz? It moves to Recently deleted for 30 days, then it&rsquo;s gone for
+                    good. Your leads are kept until then.
+                  </p>
+                  <div className="flex shrink-0 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setConfirmDelete(false);
+                        setDeleteError(false);
+                      }}
+                      disabled={deleting}
+                      className="rounded-full border border-[var(--hairline)] bg-white px-4 py-2 text-xs font-bold uppercase tracking-[0.1em] transition-colors hover:bg-[var(--e-surface-3)] disabled:opacity-40"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setDeleting(true);
+                        setDeleteError(false);
+                        try {
+                          await onDelete();
+                        } catch {
+                          setDeleteError(true);
+                        } finally {
+                          setDeleting(false);
+                        }
+                      }}
+                      disabled={deleting}
+                      className="rounded-full bg-rose-600 px-4 py-2 text-xs font-bold uppercase tracking-[0.1em] text-white transition-colors hover:bg-rose-700 disabled:opacity-40"
+                    >
+                      {deleting ? "Deleting…" : "Delete quiz"}
+                    </button>
+                  </div>
                 </div>
+                {deleteError && (
+                  <p className="text-xs font-semibold text-rose-700">
+                    Couldn&rsquo;t delete just now. Please try again.
+                  </p>
+                )}
               </div>
             ) : (
               <button
