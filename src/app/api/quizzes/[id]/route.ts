@@ -20,7 +20,7 @@ const FollowUpSchema = z.object({
 // Editor persistence: PATCH a draft's title, config, WhatsApp delivery number,
 // and/or the branding toggle. config is re-validated against the versioned
 // quiz_config contract. `whatsapp` is stored in the `delivery` jsonb (empty
-// string clears it). `branding_enabled: false` is a Pro feature (SS5.9), and
+// string clears it). `branding_enabled: false` is a Pro feature (§5.9), and
 // the player enforces the watermark server-side regardless, so this gate is
 // UX, not security. RLS guarantees a user can only update their own rows.
 const UpdateQuizSchema = z
