@@ -40,16 +40,18 @@ describe("kit adapter", () => {
     ).rejects.toThrow();
   });
 
-  it("skips tagging (no throw) when no tag name matches", async () => {
-    const calls: string[] = [];
-    mockFetch((url) => {
-      calls.push(url);
-      if (url.endsWith("/tags")) return new Response(JSON.stringify({ tags: [{ id: 1, name: "Other" }] }), { status: 200 });
+  it("creates a missing tag, then applies it", async () => {
+    const calls: { url: string; method: string }[] = [];
+    mockFetch((url, init) => {
+      calls.push({ url, method: (init.method as string) ?? "GET" });
+      if (url.endsWith("/v4/tags") && ((init.method as string) ?? "GET") === "GET")
+        return new Response(JSON.stringify({ tags: [] }), { status: 200 });
+      if (url.endsWith("/v4/tags") && init.method === "POST")
+        return new Response(JSON.stringify({ tag: { id: 77, name: "Beginner" } }), { status: 201 });
       return new Response("{}", { status: 200 });
     });
-    await expect(
-      kit.upsertSubscriber({ apiKey: "k" }, "form55", { email: "a@b.com", name: "A", tags: ["Beginner"] }),
-    ).resolves.toBeUndefined();
-    expect(calls.some((u) => /\/tags\/\d+\/subscribers$/.test(u))).toBe(false);
+    await kit.upsertSubscriber({ apiKey: "k" }, "form55", { email: "a@b.com", name: "A", tags: ["Beginner"] });
+    expect(calls.some((c) => c.url.endsWith("/v4/tags") && c.method === "POST")).toBe(true);
+    expect(calls.some((c) => c.url.endsWith("/v4/tags/77/subscribers"))).toBe(true);
   });
 });

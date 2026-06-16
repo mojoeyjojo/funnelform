@@ -53,11 +53,18 @@ export const kit: EmailDestination = {
       const existing = data.tags ?? [];
       for (const tagName of contact.tags) {
         const match = existing.find((t) => t.name.toLowerCase() === tagName.toLowerCase());
-        if (!match) {
-          console.warn(`[kit] no tag named "${tagName}"; skipping (create it in Kit to enable tagging)`);
-          continue;
+        let tagId = match?.id;
+        if (tagId === undefined) {
+          const created = await call(creds.apiKey, "/tags", {
+            method: "POST",
+            body: JSON.stringify({ name: tagName }),
+          });
+          if (!created.ok) throw new Error(`Kit create tag ${created.status}`);
+          const body = (await created.json()) as { tag?: { id: number } };
+          if (!body.tag) throw new Error("Kit create tag returned no tag");
+          tagId = body.tag.id;
         }
-        const tagRes = await call(creds.apiKey, `/tags/${match.id}/subscribers`, {
+        const tagRes = await call(creds.apiKey, `/tags/${tagId}/subscribers`, {
           method: "POST",
           body: JSON.stringify({ email_address: contact.email }),
         });
