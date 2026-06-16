@@ -26,7 +26,7 @@ export type BuilderEventType =
   | "trial_reminder_sent"; // metadata: { subscription_id, trial_end }, dedupes the cron email
 
 // Where a free user ran into the paywall (drives upgrade-page messaging later).
-export type PaywallTrigger = "second_quiz" | "branding" | "analytics" | "lead_cap";
+export type PaywallTrigger = "second_quiz" | "branding" | "analytics" | "lead_cap" | "custom_domain";
 
 // quiz_events.event_type: the published quiz's VISITOR journey (build spec §3).
 export type QuizEventType =
