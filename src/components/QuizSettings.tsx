@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { OutputRating, QuizDestination } from "@/lib/types";
 import type { FollowUpConfig } from "@/lib/delivery/templates";
@@ -266,13 +266,6 @@ function IntegrationsCard({
   // Targets loading in-flight state; keyed by integration id.
   const [targetsLoading, setTargetsLoading] = useState<Record<string, boolean>>({});
 
-  // Load connections on first render.
-  const [loaded, setLoaded] = useState(false);
-  if (!loaded) {
-    setLoaded(true);
-    void loadIntegrations();
-  }
-
   async function loadIntegrations() {
     setLoadError(null);
     try {
@@ -301,6 +294,23 @@ function IntegrationsCard({
     }
   }
 
+  // Load connections on mount.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadIntegrations();
+  }, []);
+
+  // Load targets for any connected integration that does not have them cached yet.
+  useEffect(() => {
+    for (const integration of integrations ?? []) {
+      if (targetMap[integration.id] === undefined && !targetsLoading[integration.id]) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        void loadTargets(integration.id);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [integrations]);
+
   async function connect(provider: "kit" | "mailchimp") {
     setConnecting(true);
     setConnectError(null);
@@ -317,7 +327,10 @@ function IntegrationsCard({
         setConnectError("error" in data ? data.error : "Could not connect");
         return;
       }
-      if (!("integration" in data)) return;
+      if (!("integration" in data)) {
+        setConnectError("Could not connect. Unexpected response.");
+        return;
+      }
       // Clear the key immediately after use; never retain it in state.
       setDraftKey("");
       setConnectingProvider(null);
@@ -404,11 +417,6 @@ function IntegrationsCard({
             const targets = targetMap[integration.id];
             const isTargetsLoading = targetsLoading[integration.id] ?? false;
             const isDisconnecting = disconnecting[integration.id] ?? false;
-
-            // Trigger target load as a side effect when targets are not yet cached.
-            if (targets === undefined && !isTargetsLoading) {
-              void loadTargets(integration.id);
-            }
 
             return (
               <div

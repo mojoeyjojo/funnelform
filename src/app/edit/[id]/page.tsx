@@ -37,7 +37,7 @@ export default async function EditPage({
   }
 
   // Validate the stored config before handing it to the editor (never trust
-  // stored shape blindly — the renderer depends on the contract).
+  // stored shape blindly; the renderer depends on the contract).
   const parsed = QuizConfigSchema.safeParse(data.config);
   if (!parsed.success) {
     return (
