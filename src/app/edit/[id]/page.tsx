@@ -4,6 +4,7 @@ import { QuizConfigSchema } from "@/lib/schema";
 import { effectivePlan, fetchPlanProfile, hasProFeatures } from "@/lib/plan";
 import EditQuizClient from "@/components/EditQuizClient";
 import AuthOverlay from "@/components/AuthOverlay";
+import type { FollowUpConfig } from "@/lib/delivery/templates";
 
 export const runtime = "nodejs";
 
@@ -65,6 +66,13 @@ export default async function EditPage({
         initialWebhook={(data.delivery as { webhook?: string } | null)?.webhook ?? ""}
         initialBranding={data.branding_enabled !== false}
         initialAccent={(data.theme_accent as string | null) ?? null}
+        initialFollowUp={
+          (data.delivery as { followUp?: FollowUpConfig } | null)?.followUp ?? {
+            enabled: false,
+            sender: { mode: "subdomain" },
+            outcomes: {},
+          }
+        }
         hasPro={hasProFeatures(plan)}
         isGuest={isGuest}
       />

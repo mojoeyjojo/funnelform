@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import type { OutputRating } from "@/lib/types";
+import type { FollowUpConfig } from "@/lib/delivery/templates";
 
 export function QuizSettings({
   whatsapp,
@@ -17,6 +18,10 @@ export function QuizSettings({
   onBranding,
   onAccent,
   onDelete,
+  followUp,
+  onFollowUp,
+  quizTitle,
+  outcomes,
 }: {
   whatsapp: string;
   webhook: string;
@@ -30,6 +35,10 @@ export function QuizSettings({
   onBranding: (showBadge: boolean) => void;
   onAccent: (v: string | null) => void;
   onDelete: () => Promise<void> | void;
+  followUp: FollowUpConfig;
+  onFollowUp: (next: FollowUpConfig) => void;
+  quizTitle: string;
+  outcomes: { id: string; name: string; description: string }[];
 }) {
   const [open, setOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -146,6 +155,14 @@ export function QuizSettings({
             </div>
           </div>
 
+          {/* Follow-up email */}
+          <FollowUpCard
+            followUp={followUp}
+            onFollowUp={onFollowUp}
+            quizTitle={quizTitle}
+            outcomes={outcomes}
+          />
+
           {/* Delete */}
           <div className="border-t border-[var(--hairline)] pt-4">
             {confirmDelete ? (
@@ -203,6 +220,142 @@ export function QuizSettings({
               </button>
             )}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FollowUpCard({
+  followUp,
+  onFollowUp,
+  quizTitle,
+  outcomes,
+}: {
+  followUp: FollowUpConfig;
+  onFollowUp: (next: FollowUpConfig) => void;
+  quizTitle: string;
+  outcomes: { id: string; name: string; description: string }[];
+}) {
+  const [draftingId, setDraftingId] = useState<string | null>(null);
+  const [draftError, setDraftError] = useState<string | null>(null);
+
+  function toggleEnabled(enabled: boolean) {
+    onFollowUp({ ...followUp, enabled });
+  }
+
+  function updateOutcome(outcomeId: string, field: "subject" | "body", value: string) {
+    const existing = followUp.outcomes[outcomeId] ?? { subject: "", body: "" };
+    onFollowUp({
+      ...followUp,
+      outcomes: {
+        ...followUp.outcomes,
+        [outcomeId]: { ...existing, [field]: value },
+      },
+    });
+  }
+
+  async function draftOutcome(outcome: { id: string; name: string; description: string }) {
+    setDraftingId(outcome.id);
+    setDraftError(null);
+    try {
+      const res = await fetch("/api/follow-up/draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          quizTitle,
+          outcomeName: outcome.name,
+          outcomeDescription: outcome.description,
+          ownerName: quizTitle,
+        }),
+      });
+      if (!res.ok) throw new Error("draft_failed");
+      const data = (await res.json()) as { subject?: string; body?: string };
+      if (typeof data.subject === "string" || typeof data.body === "string") {
+        const existing = followUp.outcomes[outcome.id] ?? { subject: "", body: "" };
+        onFollowUp({
+          ...followUp,
+          outcomes: {
+            ...followUp.outcomes,
+            [outcome.id]: {
+              subject: typeof data.subject === "string" ? data.subject : existing.subject,
+              body: typeof data.body === "string" ? data.body : existing.body,
+            },
+          },
+        });
+      }
+    } catch {
+      setDraftError("Could not draft. Please try again.");
+    } finally {
+      setDraftingId(null);
+    }
+  }
+
+  return (
+    <div className="rounded-2xl border border-[var(--hairline)] p-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-sm font-semibold">Follow-up email</p>
+          <p className="mt-1 text-xs text-[var(--muted)]">
+            Send each lead a personalised email based on their result. One template per outcome.
+          </p>
+        </div>
+        <label className="flex shrink-0 cursor-pointer items-center gap-2 text-xs font-semibold">
+          <input
+            type="checkbox"
+            checked={followUp.enabled}
+            onChange={(e) => toggleEnabled(e.target.checked)}
+            className="h-4 w-4 accent-[var(--signal)]"
+          />
+          Enable
+        </label>
+      </div>
+
+      {followUp.enabled && outcomes.length > 0 && (
+        <div className="mt-4 space-y-5">
+          <p className="text-[11px] text-[var(--muted)]">
+            Available tokens: <code className="font-mono">{"{{name}}"}</code>,{" "}
+            <code className="font-mono">{"{{outcome}}"}</code>,{" "}
+            <code className="font-mono">{"{{result_link}}"}</code>,{" "}
+            <code className="font-mono">{"{{quiz_title}}"}</code>,{" "}
+            <code className="font-mono">{"{{owner_name}}"}</code>
+          </p>
+          {draftError && (
+            <p className="text-xs font-semibold text-rose-600">{draftError}</p>
+          )}
+          {outcomes.map((outcome) => {
+            const tpl = followUp.outcomes[outcome.id] ?? { subject: "", body: "" };
+            const isDrafting = draftingId === outcome.id;
+            return (
+              <div key={outcome.id} className="space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs font-semibold text-[var(--foreground)]">{outcome.name}</p>
+                  <button
+                    type="button"
+                    disabled={isDrafting || draftingId !== null}
+                    onClick={() => void draftOutcome(outcome)}
+                    className="shrink-0 rounded-full border border-[var(--hairline)] px-3 py-1 text-[11px] font-semibold text-[var(--e-text-2)] transition-colors hover:border-black/20 disabled:opacity-40"
+                  >
+                    {isDrafting ? "Drafting..." : "AI draft"}
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  value={tpl.subject}
+                  onChange={(e) => updateOutcome(outcome.id, "subject", e.target.value)}
+                  placeholder="Subject line"
+                  className="w-full rounded-full border border-[var(--hairline)] px-4 py-2 text-xs outline-none focus:border-[var(--signal)]"
+                />
+                <textarea
+                  value={tpl.body}
+                  onChange={(e) => updateOutcome(outcome.id, "body", e.target.value)}
+                  placeholder="Email body"
+                  rows={4}
+                  className="w-full resize-none rounded-[10px] border border-[var(--hairline)] px-4 py-2 text-xs outline-none focus:border-[var(--signal)]"
+                />
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

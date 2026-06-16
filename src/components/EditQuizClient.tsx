@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { GeneratedQuiz, QuizConfig } from "@/lib/schema";
 import type { OutputRating } from "@/lib/types";
+import type { FollowUpConfig } from "@/lib/delivery/templates";
 import { QuizView } from "./QuizView";
 import { QuizSettings, EmbedSnippet } from "./QuizSettings";
 import { StructureNav } from "./StructureNav";
@@ -35,6 +36,7 @@ export default function EditQuizClient({
   initialWebhook,
   initialBranding,
   initialAccent,
+  initialFollowUp,
   hasPro,
   isGuest,
 }: {
@@ -47,6 +49,7 @@ export default function EditQuizClient({
   initialWebhook: string;
   initialBranding: boolean;
   initialAccent: string | null;
+  initialFollowUp: FollowUpConfig;
   hasPro: boolean;
   isGuest: boolean;
 }) {
@@ -55,6 +58,7 @@ export default function EditQuizClient({
   const [webhook, setWebhook] = useState(initialWebhook);
   const [branding, setBranding] = useState(initialBranding);
   const [accent, setAccent] = useState<string | null>(initialAccent);
+  const [followUp, setFollowUp] = useState<FollowUpConfig>(initialFollowUp);
   const [state, setState] = useState<SaveState>("clean");
   const [publishState, setPublishState] = useState<PublishState>(
     initialStatus === "published" ? "published" : "idle",
@@ -166,6 +170,11 @@ export default function EditQuizClient({
     setState("dirty");
   }
 
+  function editFollowUp(next: FollowUpConfig) {
+    setFollowUp(next);
+    setState("dirty");
+  }
+
   // §5.3 reroll: fetch fresh COPY for one question/outcome and merge it onto the
   // existing item, keeping the hidden logic (option ids/tags/score, outcome
   // match_logic, cta.url) untouched. Marks dirty so the change is saved like any
@@ -218,6 +227,7 @@ export default function EditQuizClient({
           config: quiz.config,
           whatsapp,
           webhook,
+          followUp,
           theme_accent: accent,
           // Only Pro can flip this; free accounts never send it, so a save
           // can't 403 on the branding gate.
@@ -476,6 +486,14 @@ export default function EditQuizClient({
               onBranding={editBranding}
               onAccent={editAccent}
               onDelete={deleteQuiz}
+              followUp={followUp}
+              onFollowUp={editFollowUp}
+              quizTitle={quiz.title}
+              outcomes={quiz.config.outcomes.map((o) => ({
+                id: o.id,
+                name: o.name,
+                description: o.description,
+              }))}
             />
             <div className="mt-10">
               <QuizView quiz={quiz} onEdit={editField} onRegenerate={regenerate} />

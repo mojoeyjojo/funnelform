@@ -317,6 +317,64 @@ export async function extractSiteFacts(markdown: string, goal: Goal): Promise<Si
 }
 
 // =============================================================================
+// Per-outcome follow-up email drafter. A cheap Haiku call that produces a short,
+// friendly email (subject + body) for one quiz outcome. The caller stores it in
+// the delivery jsonb alongside the WhatsApp and webhook fields.
+
+const FOLLOW_UP_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["subject", "body"],
+  properties: {
+    subject: { type: "string" },
+    body: { type: "string" },
+  },
+} as const;
+
+/**
+ * Draft a short follow-up email for one quiz outcome. Uses the Haiku model with
+ * structured outputs so the result is always a valid JSON object with subject +
+ * body. Tokens {{name}}, {{result_link}}, {{quiz_title}}, {{owner_name}}, and
+ * {{outcome}} are encouraged where natural. Under 150 words. No em dashes.
+ */
+export async function draftFollowUpEmail(input: {
+  quizTitle: string;
+  outcomeName: string;
+  outcomeDescription: string;
+  ownerName: string;
+}): Promise<{ subject: string; body: string }> {
+  const client = new Anthropic();
+  const system = `You write short, friendly follow-up emails for quiz results pages.
+Rules:
+- "subject": a concise, compelling email subject line (under 10 words).
+- "body": a warm, personal email body, under 150 words.
+- Use the tokens {{name}} (recipient first name), {{result_link}} (link to their result), {{quiz_title}}, {{owner_name}}, and {{outcome}} where natural.
+- No em dashes anywhere. No hype. No numbered lists.
+- Close warmly but do not invent a sign-off name; use {{owner_name}}.`;
+  const user = `Quiz title: ${input.quizTitle}
+Outcome name: ${input.outcomeName}
+Outcome description: ${input.outcomeDescription}
+Sender / owner name: ${input.ownerName}
+
+Write one follow-up email for a recipient who got the "${input.outcomeName}" result.`;
+
+  const res = await client.messages.create({
+    model: EXTRACT_MODEL,
+    max_tokens: 700,
+    thinking: { type: "disabled" },
+    output_config: { format: { type: "json_schema", schema: FOLLOW_UP_SCHEMA } },
+    system,
+    messages: [{ role: "user", content: user }],
+  });
+
+  const parsed = JSON.parse(textOf(res)) as { subject?: unknown; body?: unknown };
+  return {
+    subject: typeof parsed.subject === "string" && parsed.subject.trim() ? parsed.subject.trim() : "",
+    body: typeof parsed.body === "string" && parsed.body.trim() ? parsed.body.trim() : "",
+  };
+}
+
+// =============================================================================
 // Single-item regeneration (build spec §5.3, the "give me another take" reroll).
 // A cheap Haiku call that rewrites only the COPY of one question or one outcome.
 // The hidden scoring logic (option tags/score, outcome match_logic, cta.url) is
