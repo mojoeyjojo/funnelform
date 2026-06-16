@@ -7,10 +7,20 @@ import { isWellFormedWebhookUrl } from "@/lib/ssrf";
 
 export const runtime = "nodejs";
 
+// Per-outcome follow-up email config, stored inside the delivery jsonb.
+const FollowUpSchema = z.object({
+  enabled: z.boolean(),
+  sender: z.object({ mode: z.enum(["subdomain", "custom_domain"]) }),
+  outcomes: z.record(
+    z.string(),
+    z.object({ subject: z.string().max(200), body: z.string().max(20000) }),
+  ),
+});
+
 // Editor persistence: PATCH a draft's title, config, WhatsApp delivery number,
 // and/or the branding toggle. config is re-validated against the versioned
 // quiz_config contract. `whatsapp` is stored in the `delivery` jsonb (empty
-// string clears it). `branding_enabled: false` is a Pro feature (§5.9), and
+// string clears it). `branding_enabled: false` is a Pro feature (SS5.9), and
 // the player enforces the watermark server-side regardless, so this gate is
 // UX, not security. RLS guarantees a user can only update their own rows.
 const UpdateQuizSchema = z
@@ -26,6 +36,7 @@ const UpdateQuizSchema = z
       .regex(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/)
       .nullable()
       .optional(),
+    followUp: FollowUpSchema.optional(),
   })
   .refine(
     (v) =>
@@ -34,7 +45,8 @@ const UpdateQuizSchema = z
       v.whatsapp !== undefined ||
       v.webhook !== undefined ||
       v.branding_enabled !== undefined ||
-      v.theme_accent !== undefined,
+      v.theme_accent !== undefined ||
+      v.followUp !== undefined,
     { message: "Nothing to update" },
   );
 
@@ -95,8 +107,12 @@ export async function PATCH(
   if (parsed.data.config !== undefined) update.config = parsed.data.config;
   if (parsed.data.branding_enabled !== undefined) update.branding_enabled = parsed.data.branding_enabled;
   if (parsed.data.theme_accent !== undefined) update.theme_accent = parsed.data.theme_accent;
-  if (parsed.data.whatsapp !== undefined || parsed.data.webhook !== undefined) {
-    const delivery: Record<string, string> = {};
+  if (
+    parsed.data.whatsapp !== undefined ||
+    parsed.data.webhook !== undefined ||
+    parsed.data.followUp !== undefined
+  ) {
+    const delivery: Record<string, unknown> = {};
     const w = (parsed.data.whatsapp ?? "").trim();
     const hook = (parsed.data.webhook ?? "").trim();
     if (w) delivery.whatsapp = w;
@@ -111,6 +127,7 @@ export async function PATCH(
       }
       delivery.webhook = hook;
     }
+    if (parsed.data.followUp !== undefined) delivery.followUp = parsed.data.followUp;
     update.delivery = delivery;
   }
 
