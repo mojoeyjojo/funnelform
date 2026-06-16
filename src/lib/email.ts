@@ -1,8 +1,8 @@
 import "server-only";
 
 // Owner-notification email (build spec §5.6 / §9). This is the REAL proof that
-// Claim 3's loop closes — when a lead is captured, the owner gets pinged. Sent
-// via Resend's REST API (no SDK dependency). Never throws — delivery must not
+// Claim 3's loop closes: when a lead is captured, the owner gets pinged. Sent
+// via Resend's REST API (no SDK dependency). Never throws, delivery must not
 // break lead capture; returns whether it sent so the caller can record it.
 //
 // Config: RESEND_API_KEY + RESEND_FROM (e.g. "Treeflow <leads@yourdomain>").
@@ -40,7 +40,7 @@ export async function sendTrialEndingReminder(r: TrialReminder): Promise<boolean
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.RESEND_FROM;
   if (!apiKey || !from) {
-    console.warn("[email] RESEND not configured — trial reminder skipped");
+    console.warn("[email] RESEND not configured, trial reminder skipped");
     return false;
   }
 
@@ -84,7 +84,7 @@ export async function sendOwnerLeadNotification(n: OwnerNotification): Promise<b
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.RESEND_FROM;
   if (!apiKey || !from) {
-    console.warn("[email] RESEND not configured — owner notification skipped");
+    console.warn("[email] RESEND not configured, owner notification skipped");
     return false;
   }
 
