@@ -266,6 +266,10 @@ function FollowUpCard({
           quizTitle,
           outcomeName: outcome.name,
           outcomeDescription: outcome.description,
+          // Phase 1 has no owner display-name field, so the brand (the quiz title)
+          // stands in for the sender name. This matches the runtime send, where the
+          // {{owner_name}} token and the email From name also resolve to the title.
+          // A dedicated owner display name is a Phase 2 enhancement.
           ownerName: quizTitle,
         }),
       });
