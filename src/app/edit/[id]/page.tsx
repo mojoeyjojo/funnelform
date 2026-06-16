@@ -5,6 +5,7 @@ import { effectivePlan, fetchPlanProfile, hasProFeatures } from "@/lib/plan";
 import EditQuizClient from "@/components/EditQuizClient";
 import AuthOverlay from "@/components/AuthOverlay";
 import type { FollowUpConfig } from "@/lib/delivery/templates";
+import type { QuizDestination } from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -72,6 +73,9 @@ export default async function EditPage({
             sender: { mode: "subdomain" },
             outcomes: {},
           }
+        }
+        initialDestinations={
+          (data.delivery as { destinations?: QuizDestination[] } | null)?.destinations ?? []
         }
         hasPro={hasProFeatures(plan)}
         isGuest={isGuest}

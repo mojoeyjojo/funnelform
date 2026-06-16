@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { GeneratedQuiz, QuizConfig } from "@/lib/schema";
-import type { OutputRating } from "@/lib/types";
+import type { OutputRating, QuizDestination } from "@/lib/types";
 import type { FollowUpConfig } from "@/lib/delivery/templates";
 import { QuizView } from "./QuizView";
 import { QuizSettings, EmbedSnippet } from "./QuizSettings";
@@ -37,6 +37,7 @@ export default function EditQuizClient({
   initialBranding,
   initialAccent,
   initialFollowUp,
+  initialDestinations,
   hasPro,
   isGuest,
 }: {
@@ -50,6 +51,7 @@ export default function EditQuizClient({
   initialBranding: boolean;
   initialAccent: string | null;
   initialFollowUp: FollowUpConfig;
+  initialDestinations: QuizDestination[];
   hasPro: boolean;
   isGuest: boolean;
 }) {
@@ -59,6 +61,7 @@ export default function EditQuizClient({
   const [branding, setBranding] = useState(initialBranding);
   const [accent, setAccent] = useState<string | null>(initialAccent);
   const [followUp, setFollowUp] = useState<FollowUpConfig>(initialFollowUp);
+  const [destinations, setDestinations] = useState<QuizDestination[]>(initialDestinations);
   const [state, setState] = useState<SaveState>("clean");
   const [publishState, setPublishState] = useState<PublishState>(
     initialStatus === "published" ? "published" : "idle",
@@ -175,6 +178,11 @@ export default function EditQuizClient({
     setState("dirty");
   }
 
+  function editDestinations(next: QuizDestination[]) {
+    setDestinations(next);
+    setState("dirty");
+  }
+
   // §5.3 reroll: fetch fresh COPY for one question/outcome and merge it onto the
   // existing item, keeping the hidden logic (option ids/tags/score, outcome
   // match_logic, cta.url) untouched. Marks dirty so the change is saved like any
@@ -228,6 +236,7 @@ export default function EditQuizClient({
           whatsapp,
           webhook,
           followUp,
+          destinations,
           theme_accent: accent,
           // Only Pro can flip this; free accounts never send it, so a save
           // can't 403 on the branding gate.
@@ -488,6 +497,8 @@ export default function EditQuizClient({
               onDelete={deleteQuiz}
               followUp={followUp}
               onFollowUp={editFollowUp}
+              destinations={destinations}
+              onDestinations={editDestinations}
               quizTitle={quiz.title}
               outcomes={quiz.config.outcomes.map((o) => ({
                 id: o.id,

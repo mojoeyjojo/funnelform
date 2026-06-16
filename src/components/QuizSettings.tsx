@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import type { OutputRating } from "@/lib/types";
+import type { OutputRating, QuizDestination } from "@/lib/types";
 import type { FollowUpConfig } from "@/lib/delivery/templates";
 
 export function QuizSettings({
@@ -20,6 +20,8 @@ export function QuizSettings({
   onDelete,
   followUp,
   onFollowUp,
+  destinations,
+  onDestinations,
   quizTitle,
   outcomes,
 }: {
@@ -37,6 +39,8 @@ export function QuizSettings({
   onDelete: () => Promise<void> | void;
   followUp: FollowUpConfig;
   onFollowUp: (next: FollowUpConfig) => void;
+  destinations: QuizDestination[];
+  onDestinations: (next: QuizDestination[]) => void;
   quizTitle: string;
   outcomes: { id: string; name: string; description: string; hasCta: boolean }[];
 }) {
@@ -155,6 +159,9 @@ export function QuizSettings({
             </div>
           </div>
 
+          {/* Email service provider connections + per-quiz destination picker */}
+          <IntegrationsCard destinations={destinations} onDestinations={onDestinations} />
+
           {/* Follow-up email */}
           <FollowUpCard
             followUp={followUp}
@@ -220,6 +227,340 @@ export function QuizSettings({
               </button>
             )}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Shape returned by GET /api/integrations.
+type IntegrationRow = { id: string; provider: string; status: string };
+
+// Shape returned by POST /api/integrations and GET /api/integrations/[id].
+type TargetRow = { id: string; name: string };
+
+function IntegrationsCard({
+  destinations,
+  onDestinations,
+}: {
+  destinations: QuizDestination[];
+  onDestinations: (next: QuizDestination[]) => void;
+}) {
+  // List of connected integrations fetched from the API.
+  const [integrations, setIntegrations] = useState<IntegrationRow[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Per-provider targets fetched after connect or on demand; keyed by integration id.
+  const [targetMap, setTargetMap] = useState<Record<string, TargetRow[]>>({});
+
+  // Connect form state: one provider can be in "connecting" mode at a time.
+  // Storing the draft key only until the POST succeeds, then it is cleared.
+  const [connectingProvider, setConnectingProvider] = useState<"kit" | "mailchimp" | null>(null);
+  const [draftKey, setDraftKey] = useState("");
+  const [connectError, setConnectError] = useState<string | null>(null);
+  const [connecting, setConnecting] = useState(false);
+
+  // Disconnect in-flight state; keyed by integration id.
+  const [disconnecting, setDisconnecting] = useState<Record<string, boolean>>({});
+
+  // Targets loading in-flight state; keyed by integration id.
+  const [targetsLoading, setTargetsLoading] = useState<Record<string, boolean>>({});
+
+  // Load connections on first render.
+  const [loaded, setLoaded] = useState(false);
+  if (!loaded) {
+    setLoaded(true);
+    void loadIntegrations();
+  }
+
+  async function loadIntegrations() {
+    setLoadError(null);
+    try {
+      const res = await fetch("/api/integrations");
+      if (!res.ok) throw new Error("fetch_failed");
+      const data = (await res.json()) as { integrations: IntegrationRow[] };
+      setIntegrations(data.integrations);
+    } catch {
+      setLoadError("Could not load connections. Please try again.");
+    }
+  }
+
+  async function loadTargets(integrationId: string) {
+    if (targetMap[integrationId] !== undefined) return;
+    setTargetsLoading((prev) => ({ ...prev, [integrationId]: true }));
+    try {
+      const res = await fetch(`/api/integrations/${integrationId}`);
+      if (!res.ok) throw new Error("fetch_failed");
+      const data = (await res.json()) as { targets: TargetRow[] };
+      setTargetMap((prev) => ({ ...prev, [integrationId]: data.targets }));
+    } catch {
+      // Targets will remain undefined; the select will show an error hint.
+      setTargetMap((prev) => ({ ...prev, [integrationId]: [] }));
+    } finally {
+      setTargetsLoading((prev) => ({ ...prev, [integrationId]: false }));
+    }
+  }
+
+  async function connect(provider: "kit" | "mailchimp") {
+    setConnecting(true);
+    setConnectError(null);
+    try {
+      const res = await fetch("/api/integrations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider, apiKey: draftKey }),
+      });
+      const data = (await res.json()) as
+        | { integration: IntegrationRow; targets: TargetRow[] }
+        | { error: string };
+      if (!res.ok) {
+        setConnectError("error" in data ? data.error : "Could not connect");
+        return;
+      }
+      if (!("integration" in data)) return;
+      // Clear the key immediately after use; never retain it in state.
+      setDraftKey("");
+      setConnectingProvider(null);
+      // Update integration list and cache targets returned by the POST.
+      setIntegrations((prev) => {
+        if (!prev) return [data.integration];
+        const idx = prev.findIndex((i) => i.id === data.integration.id);
+        if (idx >= 0) {
+          const updated = [...prev];
+          updated[idx] = data.integration;
+          return updated;
+        }
+        return [...prev, data.integration];
+      });
+      setTargetMap((prev) => ({ ...prev, [data.integration.id]: data.targets }));
+    } catch {
+      setConnectError("Could not connect. Please try again.");
+    } finally {
+      setConnecting(false);
+    }
+  }
+
+  async function disconnect(integrationId: string) {
+    setDisconnecting((prev) => ({ ...prev, [integrationId]: true }));
+    try {
+      const res = await fetch(`/api/integrations/${integrationId}`, { method: "DELETE" });
+      if (!res.ok) return;
+      setIntegrations((prev) => (prev ? prev.filter((i) => i.id !== integrationId) : prev));
+      setTargetMap((prev) => {
+        const next = { ...prev };
+        delete next[integrationId];
+        return next;
+      });
+      // Remove destinations that referenced the deleted connection.
+      onDestinations(destinations.filter((d) => d.integrationId !== integrationId));
+    } catch {
+      // Silent: the row persists, user can retry.
+    } finally {
+      setDisconnecting((prev) => ({ ...prev, [integrationId]: false }));
+    }
+  }
+
+  function pickTarget(integration: IntegrationRow, targetId: string) {
+    const targets = targetMap[integration.id] ?? [];
+    const target = targets.find((t) => t.id === targetId);
+    if (!target) return;
+    // At most one destination per integration id.
+    const filtered = destinations.filter((d) => d.integrationId !== integration.id);
+    onDestinations([
+      ...filtered,
+      {
+        integrationId: integration.id,
+        provider: integration.provider as QuizDestination["provider"],
+        targetId: target.id,
+        targetName: target.name,
+      },
+    ]);
+  }
+
+  function removeDestination(integrationId: string) {
+    onDestinations(destinations.filter((d) => d.integrationId !== integrationId));
+  }
+
+  const providerLabel: Record<string, string> = { kit: "Kit", mailchimp: "Mailchimp" };
+
+  const connectedProviders = new Set((integrations ?? []).map((i) => i.provider));
+
+  return (
+    <div className="rounded-2xl border border-[var(--hairline)] p-4">
+      <p className="text-sm font-semibold">Email integrations</p>
+      <p className="mt-1 text-xs text-[var(--muted)]">
+        Connect an email service provider and choose which list or form to add leads to.
+      </p>
+
+      {loadError && (
+        <p className="mt-2 text-xs font-semibold text-rose-600">{loadError}</p>
+      )}
+
+      {/* Connected integrations */}
+      {integrations && integrations.length > 0 && (
+        <div className="mt-4 space-y-3">
+          {integrations.map((integration) => {
+            const dest = destinations.find((d) => d.integrationId === integration.id);
+            const targets = targetMap[integration.id];
+            const isTargetsLoading = targetsLoading[integration.id] ?? false;
+            const isDisconnecting = disconnecting[integration.id] ?? false;
+
+            // Trigger target load as a side effect when targets are not yet cached.
+            if (targets === undefined && !isTargetsLoading) {
+              void loadTargets(integration.id);
+            }
+
+            return (
+              <div
+                key={integration.id}
+                className="rounded-[10px] border border-[var(--hairline)] bg-[var(--e-surface-2)] p-3"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold">
+                      {providerLabel[integration.provider] ?? integration.provider}
+                    </span>
+                    {integration.status === "needs_reconnect" ? (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                        Needs reconnect
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                        Connected
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {integration.status === "needs_reconnect" && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setConnectingProvider(integration.provider as "kit" | "mailchimp");
+                          setDraftKey("");
+                          setConnectError(null);
+                        }}
+                        className="text-[11px] font-semibold text-[var(--signal)] underline underline-offset-2"
+                      >
+                        Reconnect
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      disabled={isDisconnecting}
+                      onClick={() => void disconnect(integration.id)}
+                      className="text-[11px] font-semibold text-[var(--muted)] underline underline-offset-2 transition-colors hover:text-rose-600 disabled:opacity-40"
+                    >
+                      {isDisconnecting ? "Removing..." : "Disconnect"}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Target picker */}
+                <div className="mt-2">
+                  {isTargetsLoading ? (
+                    <p className="text-[11px] text-[var(--muted)]">Loading lists...</p>
+                  ) : targets && targets.length > 0 ? (
+                    <select
+                      value={dest?.targetId ?? ""}
+                      onChange={(e) => pickTarget(integration, e.target.value)}
+                      className="w-full rounded-full border border-[var(--hairline)] bg-white px-3 py-2 text-xs outline-none focus:border-[var(--signal)]"
+                    >
+                      <option value="">No list selected</option>
+                      {targets.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : targets && targets.length === 0 ? (
+                    <p className="text-[11px] text-[var(--muted)]">
+                      No lists found. Create one in your ESP first.
+                    </p>
+                  ) : null}
+                </div>
+
+                {/* Active destination chip */}
+                {dest && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className="flex items-center gap-1.5 rounded-full border border-[var(--hairline)] bg-white px-3 py-1 text-[11px] font-semibold text-[var(--foreground)]">
+                      {dest.targetName}
+                      <button
+                        type="button"
+                        aria-label={`Remove ${dest.targetName}`}
+                        onClick={() => removeDestination(integration.id)}
+                        className="ml-0.5 text-[var(--muted)] transition-colors hover:text-rose-600"
+                      >
+                        &#x2715;
+                      </button>
+                    </span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Connect form (shown when a provider button is clicked or reconnect is triggered) */}
+      {connectingProvider && (
+        <div className="mt-4 space-y-2">
+          <p className="text-xs font-semibold">
+            {connectingProvider === "kit" ? "Kit" : "Mailchimp"} API key
+          </p>
+          <input
+            type="password"
+            value={draftKey}
+            onChange={(e) => setDraftKey(e.target.value)}
+            placeholder="Paste your API key"
+            autoComplete="off"
+            className="w-full rounded-full border border-[var(--hairline)] px-4 py-2.5 text-xs outline-none focus:border-[var(--signal)]"
+          />
+          {connectError && (
+            <p className="text-[11px] font-semibold text-rose-600">{connectError}</p>
+          )}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={connecting || draftKey.trim().length < 8}
+              onClick={() => void connect(connectingProvider)}
+              className="rounded-full bg-[var(--signal)] px-4 py-2 text-xs font-bold text-white transition-colors hover:bg-[var(--e-accent-bright)] disabled:opacity-40"
+            >
+              {connecting ? "Connecting..." : "Connect"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setConnectingProvider(null);
+                setDraftKey("");
+                setConnectError(null);
+              }}
+              className="rounded-full border border-[var(--hairline)] px-4 py-2 text-xs font-semibold text-[var(--e-text-2)] transition-colors hover:border-black/20"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Buttons to connect a provider that is not yet connected */}
+      {!connectingProvider && (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {(["kit", "mailchimp"] as const)
+            .filter((p) => !connectedProviders.has(p))
+            .map((p) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => {
+                  setConnectingProvider(p);
+                  setDraftKey("");
+                  setConnectError(null);
+                }}
+                className="rounded-full border border-[var(--hairline)] px-4 py-2 text-xs font-semibold text-[var(--e-text-2)] transition-colors hover:border-black/20 hover:text-[var(--foreground)]"
+              >
+                {p === "kit" ? "Connect Kit" : "Connect Mailchimp"}
+              </button>
+            ))}
         </div>
       )}
     </div>
