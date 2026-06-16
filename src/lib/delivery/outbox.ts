@@ -6,6 +6,7 @@ import { renderTemplate } from "./templates";
 import { sendFollowUpEmail, sendOwnerLeadNotification } from "@/lib/email";
 import type { OwnerNotification } from "@/lib/email";
 import { isSafeWebhookTarget } from "@/lib/ssrf";
+import { pushToIntegration } from "@/lib/integrations/store";
 
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>;
 
@@ -94,7 +95,7 @@ async function markFailed(admin: AdminClient, job: DeliveryJob, error: string): 
 }
 
 // Dispatch one job by kind. Throws on failure so processJob records the retry.
-async function dispatch(job: DeliveryJob): Promise<void> {
+async function dispatch(admin: AdminClient, job: DeliveryJob): Promise<void> {
   const p = job.payload as Record<string, unknown>;
   if (job.kind === "follow_up_email") {
     const ok = await sendFollowUpEmail({
@@ -133,13 +134,21 @@ async function dispatch(job: DeliveryJob): Promise<void> {
     }
     return;
   }
-  // esp_push is added in Phase 2.
+  if (job.kind === "esp_push") {
+    await pushToIntegration(
+      admin,
+      String(p.integrationId),
+      String(p.targetId),
+      p.contact as { email: string; name: string | null; tags: string[] },
+    );
+    return;
+  }
   throw new Error(`unknown job kind: ${job.kind}`);
 }
 
 export async function processJob(admin: AdminClient, job: DeliveryJob): Promise<void> {
   try {
-    await dispatch(job);
+    await dispatch(admin, job);
     // Phase 1 does not record an owner_notified builder_event here; the generic
     // dispatcher stays channel-agnostic. Re-add per-channel instrumentation later.
     await markDone(admin, job.id);
