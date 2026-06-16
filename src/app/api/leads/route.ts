@@ -6,6 +6,7 @@ import { resolveFollowUpSender } from "@/lib/email";
 import { enqueue, processJobsByIds } from "@/lib/delivery/outbox";
 import type { NewJob } from "@/lib/delivery/outbox";
 import type { FollowUpConfig } from "@/lib/delivery/templates";
+import type { QuizDestination } from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -114,6 +115,7 @@ export async function POST(request: Request) {
     const delivery = (quiz.delivery ?? {}) as {
       webhook?: string;
       followUp?: FollowUpConfig;
+      destinations?: QuizDestination[];
     };
     const jobs: NewJob[] = [];
 
@@ -184,6 +186,26 @@ export async function POST(request: Request) {
             result_link: ctaLink,
             quiz_title: quiz.title ?? "",
             owner_name: quiz.title ?? "",
+          },
+        },
+      });
+    }
+
+    for (const dest of delivery.destinations ?? []) {
+      jobs.push({
+        lead_id: leadId,
+        owner_id: quiz.owner_id,
+        kind: "esp_push",
+        target: dest.integrationId,
+        payload: {
+          integrationId: dest.integrationId,
+          targetId: dest.targetId,
+          contact: {
+            email,
+            name: cleanName,
+            // Tag the subscriber by outcome (and quiz title) so the owner can
+            // segment. Empty entries are filtered so a missing outcome is fine.
+            tags: [outcomeName, quiz.title].filter((t): t is string => Boolean(t)),
           },
         },
       });

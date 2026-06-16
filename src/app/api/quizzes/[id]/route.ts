@@ -17,6 +17,19 @@ const FollowUpSchema = z.object({
   ),
 });
 
+// Per-quiz ESP destinations: push captured leads to a connected list/form.
+// Stored inside the delivery jsonb as `destinations`. Maximum 5 per quiz.
+const DestinationsSchema = z
+  .array(
+    z.object({
+      integrationId: z.string().uuid(),
+      provider: z.enum(["kit", "mailchimp"]),
+      targetId: z.string().min(1),
+      targetName: z.string().max(200),
+    }),
+  )
+  .max(5);
+
 // Editor persistence: PATCH a draft's title, config, WhatsApp delivery number,
 // and/or the branding toggle. config is re-validated against the versioned
 // quiz_config contract. `whatsapp` is stored in the `delivery` jsonb (empty
@@ -37,6 +50,7 @@ const UpdateQuizSchema = z
       .nullable()
       .optional(),
     followUp: FollowUpSchema.optional(),
+    destinations: DestinationsSchema.optional(),
   })
   .refine(
     (v) =>
@@ -46,7 +60,8 @@ const UpdateQuizSchema = z
       v.webhook !== undefined ||
       v.branding_enabled !== undefined ||
       v.theme_accent !== undefined ||
-      v.followUp !== undefined,
+      v.followUp !== undefined ||
+      v.destinations !== undefined,
     { message: "Nothing to update" },
   );
 
@@ -110,7 +125,8 @@ export async function PATCH(
   if (
     parsed.data.whatsapp !== undefined ||
     parsed.data.webhook !== undefined ||
-    parsed.data.followUp !== undefined
+    parsed.data.followUp !== undefined ||
+    parsed.data.destinations !== undefined
   ) {
     const delivery: Record<string, unknown> = {};
     const w = (parsed.data.whatsapp ?? "").trim();
@@ -128,6 +144,7 @@ export async function PATCH(
       delivery.webhook = hook;
     }
     if (parsed.data.followUp !== undefined) delivery.followUp = parsed.data.followUp;
+    if (parsed.data.destinations !== undefined) delivery.destinations = parsed.data.destinations;
     update.delivery = delivery;
   }
 
