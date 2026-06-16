@@ -1,4 +1,4 @@
-// One-time (idempotent) Stripe catalog setup: the Funnelform Pro product with
+// One-time (idempotent) Stripe catalog setup: the Treeflow Pro product with
 // monthly and yearly prices, addressable by lookup_key so re-running is safe
 // and environments (test vs live) stay symmetric.
 //
@@ -30,7 +30,7 @@ async function findOrCreateProduct() {
   });
   if (existing.data[0]) return existing.data[0];
   return stripe.products.create({
-    name: "Funnelform Pro",
+    name: "Treeflow Pro",
     description: "Unlimited published quizzes, no branding, full analytics.",
     metadata: { ff_product: "pro" },
   });
