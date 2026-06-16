@@ -95,3 +95,21 @@ export type GenerateStreamEvent =
   | { type: "thin_site" }
   | { type: "done"; title: string; config: unknown }
   | { type: "error"; message: string; code?: "rate_limited" };
+
+// Outbox delivery (see supabase/migrations/0008_delivery_jobs.sql).
+export type DeliveryJobKind = "follow_up_email" | "owner_notify" | "webhook" | "esp_push";
+export type DeliveryJobStatus = "pending" | "done" | "failed" | "dead";
+
+export interface DeliveryJob {
+  id: string;
+  lead_id: string;
+  owner_id: string;
+  kind: DeliveryJobKind;
+  target: string | null;
+  payload: Record<string, unknown>;
+  status: DeliveryJobStatus;
+  attempts: number;
+  max_attempts: number;
+  send_after: string;
+  last_error: string | null;
+}
