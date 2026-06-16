@@ -116,13 +116,21 @@ async function dispatch(job: DeliveryJob): Promise<void> {
   if (job.kind === "webhook") {
     const url = String(p.url);
     if (!(await isSafeWebhookTarget(url))) throw new Error("webhook target unsafe");
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      redirect: "manual",
-      body: JSON.stringify(p.body),
-    });
-    if (!res.ok) throw new Error(`webhook responded ${res.status}`);
+    // 5s timeout so a stalled endpoint cannot hold the after()/sweeper open.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        redirect: "manual",
+        body: JSON.stringify(p.body),
+        signal: controller.signal,
+      });
+      if (!res.ok) throw new Error(`webhook responded ${res.status}`);
+    } finally {
+      clearTimeout(timeout);
+    }
     return;
   }
   // esp_push is added in Phase 2.
@@ -132,6 +140,8 @@ async function dispatch(job: DeliveryJob): Promise<void> {
 export async function processJob(admin: AdminClient, job: DeliveryJob): Promise<void> {
   try {
     await dispatch(job);
+    // Phase 1 does not record an owner_notified builder_event here; the generic
+    // dispatcher stays channel-agnostic. Re-add per-channel instrumentation later.
     await markDone(admin, job.id);
   } catch (err) {
     await markFailed(admin, job, err instanceof Error ? err.message : String(err));

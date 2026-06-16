@@ -147,9 +147,9 @@ export async function POST(request: Request) {
 
     const followUp = delivery.followUp;
     const outcomeTemplate = followUp?.enabled && outcome_id ? followUp.outcomes?.[outcome_id] : undefined;
-    if (followUp?.enabled && outcomeTemplate) {
+    if (outcomeTemplate) {
       const sender = resolveFollowUpSender({
-        mode: followUp.sender?.mode ?? "subdomain",
+        mode: followUp!.sender?.mode ?? "subdomain",
         brandName: quiz.title ?? "Treeflow",
         ownerEmail: ownerEmail ?? "",
         customFrom: null,
@@ -178,10 +178,19 @@ export async function POST(request: Request) {
     // Enqueue is a single INSERT and completes synchronously before the response.
     // Actual sending (network I/O) runs inside after() so it never delays the
     // visitor response and a delivery failure cannot affect lead capture.
-    const jobIds = await enqueue(admin, jobs);
-    after(async () => {
-      await processJobsByIds(admin, jobIds);
-    });
+    // Delivery is best-effort and must never fail an already-saved lead. Isolate the
+    // enqueue + after() setup so an unexpected error here cannot turn into a false 500.
+    try {
+      const jobIds = await enqueue(admin, jobs);
+      after(async () => {
+        await processJobsByIds(admin, jobIds);
+      });
+    } catch (deliveryErr) {
+      console.error(
+        "[leads] delivery setup failed:",
+        deliveryErr instanceof Error ? deliveryErr.message : deliveryErr,
+      );
+    }
   } catch (err) {
     console.error("[leads] error:", err instanceof Error ? err.message : err);
     return NextResponse.json({ error: "Could not save your details" }, { status: 500 });
