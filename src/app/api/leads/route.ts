@@ -3,6 +3,7 @@ import { after } from "next/server";
 import { z } from "zod";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import { resolveFollowUpSender } from "@/lib/email";
+import { effectivePlan, fetchPlanProfile, hasProFeatures } from "@/lib/plan";
 import { enqueue, processJobsByIds } from "@/lib/delivery/outbox";
 import type { NewJob } from "@/lib/delivery/outbox";
 import type { FollowUpConfig } from "@/lib/delivery/templates";
@@ -161,11 +162,27 @@ export async function POST(request: Request) {
     const followUp = delivery.followUp;
     const outcomeTemplate = followUp?.enabled && outcome_id ? followUp.outcomes?.[outcome_id] : undefined;
     if (outcomeTemplate) {
+      // For Pro owners who chose a custom sending domain, send from their verified
+      // domain. Falls back to the subdomain when not Pro, not verified, or not set.
+      let customFrom: string | null = null;
+      if (followUp!.sender?.mode === "custom_domain") {
+        const { data: sd } = await admin
+          .from("sending_domains")
+          .select("domain, from_local, status")
+          .eq("owner_id", quiz.owner_id)
+          .maybeSingle();
+        if (sd && sd.status === "verified") {
+          const plan = effectivePlan(await fetchPlanProfile(admin, quiz.owner_id));
+          if (hasProFeatures(plan)) {
+            customFrom = `${sd.from_local}@${sd.domain}`;
+          }
+        }
+      }
       const sender = resolveFollowUpSender({
         mode: followUp!.sender?.mode ?? "subdomain",
         brandName: quiz.title ?? "Treeflow",
         ownerEmail: ownerEmail ?? "",
-        customFrom: null,
+        customFrom,
       });
       jobs.push({
         lead_id: leadId,
