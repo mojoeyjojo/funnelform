@@ -59,8 +59,10 @@ async function findOrCreateCoupon() {
 async function findOrCreatePromotionCode(couponId) {
   const existing = await stripe.promotionCodes.list({ code, limit: 1 });
   if (existing.data[0]) return existing.data[0];
+  // API 2026-05-27.dahlia: the coupon is referenced via the `promotion` object,
+  // not a top-level `coupon` param.
   return stripe.promotionCodes.create({
-    coupon: couponId,
+    promotion: { type: "coupon", coupon: couponId },
     code,
     max_redemptions: maxRedemptions,
   });
