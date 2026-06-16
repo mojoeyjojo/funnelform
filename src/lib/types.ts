@@ -11,24 +11,24 @@ export type BuilderEventType =
   | "first_output_viewed"
   | "output_rating"
   | "field_edited"
-  // Publish flow (2B) — completes the Claim 2 create-to-publish funnel.
+  // Publish flow (2B): completes the Claim 2 create-to-publish funnel.
   | "publish_attempted"
   | "publish_blocked_validation"
   | "published"
-  // Delivery (Phase 3) — owner-notification email fired on a captured lead.
+  // Delivery (Phase 3): owner-notification email fired on a captured lead.
   | "owner_notified"
   // Cost/abuse protection: a generate request was refused by the rate limiter.
   | "rate_limited"
-  // Monetization (§5.9) — server-side paywall instrumentation.
+  // Monetization (§5.9): server-side paywall instrumentation.
   | "paywall_hit" // metadata: { trigger: PaywallTrigger }
   | "upgrade_clicked" // metadata: { trigger?, interval: "monthly" | "yearly" }
-  | "plan_changed" // metadata: { from, to, stripe_event } — written by the webhook only
-  | "trial_reminder_sent"; // metadata: { subscription_id, trial_end } — dedupes the cron email
+  | "plan_changed" // metadata: { from, to, stripe_event }, written by the webhook only
+  | "trial_reminder_sent"; // metadata: { subscription_id, trial_end }, dedupes the cron email
 
 // Where a free user ran into the paywall (drives upgrade-page messaging later).
 export type PaywallTrigger = "second_quiz" | "branding" | "analytics" | "lead_cap";
 
-// quiz_events.event_type — the published quiz's VISITOR journey (build spec §3).
+// quiz_events.event_type: the published quiz's VISITOR journey (build spec §3).
 export type QuizEventType =
   | "view"
   | "start"
