@@ -4,11 +4,12 @@ import { claimDueJobs, processJob } from "@/lib/delivery/outbox";
 
 export const runtime = "nodejs";
 
-// GET /api/cron/deliver-outbox: the retry sweeper. Invoked every minute by
-// Supabase pg_cron (see migration 0009) with the CRON_SECRET bearer. Claims due
-// pending/failed jobs and processes them; backoff and dead-lettering live in the
-// outbox. Bounded batch per run so a backlog drains over several minutes.
-export async function GET(request: Request) {
+// POST /api/cron/deliver-outbox: the retry sweeper. Invoked every minute by
+// Supabase pg_cron via net.http_post (see migration 0009) with the CRON_SECRET
+// bearer. Claims due pending/failed jobs and processes them; backoff and
+// dead-lettering live in the outbox. Bounded batch per run so a backlog drains
+// over several minutes. POST (not GET) to match the pg_net http_post call.
+export async function POST(request: Request) {
   const secret = process.env.CRON_SECRET;
   if (!secret || request.headers.get("authorization") !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
