@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import type { EspProvider, OutputRating, QuizDestination } from "@/lib/types";
+import type { EspProvider, OutputRating, QuizDestination, SendingDomain } from "@/lib/types";
 import type { FollowUpConfig } from "@/lib/delivery/templates";
 
 export function QuizSettings({
@@ -168,6 +168,7 @@ export function QuizSettings({
             onFollowUp={onFollowUp}
             quizTitle={quizTitle}
             outcomes={outcomes}
+            hasPro={hasPro}
           />
 
           {/* Delete */}
@@ -581,16 +582,279 @@ function IntegrationsCard({
   );
 }
 
+// Inline domain manager used inside the follow-up card when custom_domain mode is
+// selected and the owner has Pro. Fetches account-level sending domain state on
+// mount, lets the owner add / verify / remove the domain.
+function SendingDomainCard() {
+  const [domain, setDomain] = useState<SendingDomain | null>(null);
+  // null = not yet loaded; "none" = loaded and no domain exists
+  const [loadState, setLoadState] = useState<"loading" | "none" | "loaded" | "error">("loading");
+
+  const [draftDomain, setDraftDomain] = useState("");
+  const [addError, setAddError] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+
+  const [verifying, setVerifying] = useState(false);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
+
+  const [removing, setRemoving] = useState(false);
+  const [removeError, setRemoveError] = useState<string | null>(null);
+
+  async function loadDomain() {
+    setLoadState("loading");
+    setRemoveError(null);
+    try {
+      const res = await fetch("/api/sending-domain");
+      if (!res.ok) throw new Error("fetch_failed");
+      const data = (await res.json()) as { sendingDomain: SendingDomain | null };
+      if (data.sendingDomain) {
+        setDomain(data.sendingDomain);
+        setLoadState("loaded");
+      } else {
+        setDomain(null);
+        setLoadState("none");
+      }
+    } catch {
+      setLoadState("error");
+    }
+  }
+
+  // Load on mount.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadDomain();
+  }, []);
+
+  async function addDomain() {
+    const trimmed = draftDomain.trim();
+    if (!trimmed) return;
+    setAdding(true);
+    setAddError(null);
+    try {
+      const res = await fetch("/api/sending-domain", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ domain: trimmed }),
+      });
+      const data = (await res.json()) as { sendingDomain?: SendingDomain; error?: string; reason?: string };
+      if (!res.ok) {
+        if (res.status === 403) {
+          setAddError("A Pro plan is required to use a custom sending domain.");
+        } else {
+          setAddError(data.error ?? "Could not add domain. Please check the format and try again.");
+        }
+        return;
+      }
+      if (data.sendingDomain) {
+        setDomain(data.sendingDomain);
+        setLoadState("loaded");
+        setDraftDomain("");
+      }
+    } catch {
+      setAddError("Could not add domain. Please try again.");
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  async function verifyDomain() {
+    setVerifying(true);
+    setVerifyError(null);
+    try {
+      const res = await fetch("/api/sending-domain/verify", { method: "POST" });
+      const data = (await res.json()) as { status?: string; error?: string };
+      if (!res.ok) {
+        setVerifyError(data.error ?? "Verification failed. Please try again.");
+        return;
+      }
+      // Update the displayed status from the response.
+      if (data.status && domain) {
+        setDomain({ ...domain, status: data.status as SendingDomain["status"] });
+      }
+    } catch {
+      setVerifyError("Could not verify. Please try again.");
+    } finally {
+      setVerifying(false);
+    }
+  }
+
+  async function removeDomain() {
+    setRemoving(true);
+    setRemoveError(null);
+    try {
+      const res = await fetch("/api/sending-domain", { method: "DELETE" });
+      if (!res.ok) {
+        setRemoveError("Could not remove domain. Please try again.");
+        return;
+      }
+      setDomain(null);
+      setLoadState("none");
+    } catch {
+      setRemoveError("Could not remove domain. Please try again.");
+    } finally {
+      setRemoving(false);
+    }
+  }
+
+  if (loadState === "loading") {
+    return <p className="text-[11px] text-[var(--muted)]">Loading...</p>;
+  }
+
+  if (loadState === "error") {
+    return (
+      <div className="space-y-2">
+        <p className="text-[11px] font-semibold text-rose-600">
+          Could not load domain settings.
+        </p>
+        <button
+          type="button"
+          onClick={() => void loadDomain()}
+          className="text-[11px] font-semibold text-[var(--signal)] underline underline-offset-2"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  // No domain yet: show add form.
+  if (loadState === "none") {
+    return (
+      <div className="space-y-2">
+        <p className="text-[11px] text-[var(--muted)]">
+          Enter the domain you want to send from. You will need to add DNS records after.
+        </p>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={draftDomain}
+            onChange={(e) => setDraftDomain(e.target.value)}
+            placeholder="mail.yourdomain.com"
+            className="flex-1 rounded-full border border-[var(--hairline)] px-4 py-2 text-xs outline-none focus:border-[var(--signal)]"
+          />
+          <button
+            type="button"
+            disabled={adding || draftDomain.trim().length < 3}
+            onClick={() => void addDomain()}
+            className="rounded-full bg-[var(--signal)] px-4 py-2 text-xs font-bold text-white transition-colors hover:bg-[var(--e-accent-bright)] disabled:opacity-40"
+          >
+            {adding ? "Adding..." : "Add domain"}
+          </button>
+        </div>
+        {addError && (
+          <p className="text-[11px] font-semibold text-rose-600">{addError}</p>
+        )}
+      </div>
+    );
+  }
+
+  // Domain exists: show status, DNS records table, and actions.
+  const rec = domain!;
+  return (
+    <div className="space-y-3">
+      {/* Domain header row */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="truncate text-xs font-semibold">{rec.domain}</span>
+          {rec.status === "verified" ? (
+            <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+              Verified
+            </span>
+          ) : rec.status === "failed" ? (
+            <span className="shrink-0 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
+              Failed
+            </span>
+          ) : (
+            <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+              Pending
+            </span>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {rec.status !== "verified" && (
+            <button
+              type="button"
+              disabled={verifying}
+              onClick={() => void verifyDomain()}
+              className="text-[11px] font-semibold text-[var(--signal)] underline underline-offset-2 disabled:opacity-40"
+            >
+              {verifying ? "Checking..." : "Verify"}
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={removing}
+            onClick={() => void removeDomain()}
+            className="text-[11px] font-semibold text-[var(--muted)] underline underline-offset-2 transition-colors hover:text-rose-600 disabled:opacity-40"
+          >
+            {removing ? "Removing..." : "Remove"}
+          </button>
+        </div>
+      </div>
+
+      {/* Inline errors */}
+      {verifyError && (
+        <p className="text-[11px] font-semibold text-rose-600">{verifyError}</p>
+      )}
+      {removeError && (
+        <p className="text-[11px] font-semibold text-rose-600">{removeError}</p>
+      )}
+
+      {/* DNS records table */}
+      {rec.dns_records.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-[11px] font-semibold text-[var(--muted)]">
+            Add these DNS records at your registrar:
+          </p>
+          <div className="overflow-x-auto rounded-[10px] border border-[var(--hairline)]">
+            <table className="w-full border-collapse text-[11px]">
+              <thead>
+                <tr className="border-b border-[var(--hairline)] bg-[var(--e-surface-2)]">
+                  <th className="px-3 py-2 text-left font-semibold text-[var(--muted)]">Type</th>
+                  <th className="px-3 py-2 text-left font-semibold text-[var(--muted)]">Name</th>
+                  <th className="px-3 py-2 text-left font-semibold text-[var(--muted)]">Value</th>
+                  <th className="px-3 py-2 text-left font-semibold text-[var(--muted)]">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rec.dns_records.map((r, i) => (
+                  <tr
+                    key={i}
+                    className="border-b border-[var(--hairline)] last:border-0"
+                  >
+                    <td className="px-3 py-2 font-mono text-[var(--foreground)]">{r.type}</td>
+                    <td className="px-3 py-2 font-mono text-[var(--foreground)] break-all">{r.name}</td>
+                    <td className="px-3 py-2 font-mono text-[var(--foreground)] break-all">{r.value}</td>
+                    <td className="px-3 py-2">
+                      {r.status === "verified" ? (
+                        <span className="text-emerald-600">OK</span>
+                      ) : (
+                        <span className="text-amber-600">Pending</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function FollowUpCard({
   followUp,
   onFollowUp,
   quizTitle,
   outcomes,
+  hasPro,
 }: {
   followUp: FollowUpConfig;
   onFollowUp: (next: FollowUpConfig) => void;
   quizTitle: string;
   outcomes: { id: string; name: string; description: string; hasCta: boolean }[];
+  hasPro: boolean;
 }) {
   const [draftingId, setDraftingId] = useState<string | null>(null);
   const [draftError, setDraftError] = useState<string | null>(null);
@@ -670,6 +934,78 @@ function FollowUpCard({
           Enable
         </label>
       </div>
+
+      {followUp.enabled && (
+        <div className="mt-4 space-y-3 border-t border-[var(--hairline)] pt-4">
+          <p className="text-xs font-semibold">Send from</p>
+
+          {/* Treeflow subdomain option */}
+          <label className="flex cursor-pointer items-start gap-2.5">
+            <input
+              type="radio"
+              name="sender-mode"
+              checked={followUp.sender.mode !== "custom_domain"}
+              onChange={() =>
+                onFollowUp({ ...followUp, sender: { mode: "subdomain" } })
+              }
+              className="mt-0.5 accent-[var(--signal)]"
+            />
+            <div>
+              <span className="text-xs font-semibold">Treeflow subdomain</span>
+              <p className="text-[11px] text-[var(--muted)]">
+                Sent from a shared Treeflow address. No setup required.
+              </p>
+            </div>
+          </label>
+
+          {/* Custom domain option */}
+          <label className="flex cursor-pointer items-start gap-2.5">
+            <input
+              type="radio"
+              name="sender-mode"
+              checked={followUp.sender.mode === "custom_domain"}
+              onChange={() =>
+                onFollowUp({ ...followUp, sender: { mode: "custom_domain" } })
+              }
+              className="mt-0.5 accent-[var(--signal)]"
+            />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold">My own domain</span>
+                {!hasPro && (
+                  <span className="rounded-full bg-[var(--e-surface-2)] px-2 py-0.5 text-[10px] font-semibold text-[var(--muted)]">
+                    Pro
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-[var(--muted)]">
+                Send from your own domain. Requires DNS setup.
+              </p>
+            </div>
+          </label>
+
+          {/* Domain manager - only when custom_domain is selected */}
+          {followUp.sender.mode === "custom_domain" && (
+            !hasPro ? (
+              <div className="ml-5 rounded-[10px] border border-[var(--hairline)] bg-[var(--e-surface-2)] p-3">
+                <p className="text-xs text-[var(--muted)]">
+                  Sending from your own domain is a Pro feature.{" "}
+                  <Link
+                    href="/pricing"
+                    className="font-semibold text-[var(--signal)] underline underline-offset-2 hover:text-[var(--e-accent-bright)]"
+                  >
+                    Upgrade to Pro
+                  </Link>
+                </p>
+              </div>
+            ) : (
+              <div className="ml-5">
+                <SendingDomainCard />
+              </div>
+            )
+          )}
+        </div>
+      )}
 
       {followUp.enabled && outcomes.length > 0 && (
         <div className="mt-4 space-y-5">
