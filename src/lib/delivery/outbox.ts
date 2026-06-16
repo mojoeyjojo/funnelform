@@ -9,6 +9,10 @@ import { isSafeWebhookTarget } from "@/lib/ssrf";
 
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>;
 
+// Reservation window when claiming jobs. Must exceed the cron sweep interval so a
+// concurrent sweep skips reserved rows. Currently the sweeper runs every minute.
+const CLAIM_WINDOW_MS = 5 * 60_000;
+
 export interface NewJob {
   lead_id: string;
   owner_id: string;
@@ -31,9 +35,11 @@ export async function enqueue(admin: AdminClient, jobs: NewJob[]): Promise<strin
   return (data ?? []).map((r) => (r as { id: string }).id);
 }
 
-// Atomically claim due jobs so after() and the cron sweeper never double-send.
-// Reads due pending/failed rows, then reserves them by pushing send_after forward
-// so a concurrent sweep skips them; the row is freed again by markDone/markFailed.
+// Best-effort claim (SELECT then UPDATE, not atomic): reads due pending/failed
+// rows, then reserves them by pushing send_after forward so a concurrent sweep
+// skips them. A rare overlap between the immediate after() path and a cron tick
+// could double-send a job; email/webhook delivery tolerates an occasional
+// duplicate, so this is acceptable for this low-volume workload.
 export async function claimDueJobs(admin: AdminClient, limit: number): Promise<DeliveryJob[]> {
   const { data, error } = await admin
     .from("delivery_jobs")
@@ -48,23 +54,33 @@ export async function claimDueJobs(admin: AdminClient, limit: number): Promise<D
   }
   const rows = (data ?? []) as DeliveryJob[];
   if (rows.length === 0) return [];
-  const reserved = new Date(Date.now() + 5 * 60_000).toISOString();
+  const reserved = new Date(Date.now() + CLAIM_WINDOW_MS).toISOString();
   const ids = rows.map((r) => r.id);
-  await admin.from("delivery_jobs").update({ send_after: reserved }).in("id", ids);
+  const { error: reserveError } = await admin
+    .from("delivery_jobs")
+    .update({ send_after: reserved })
+    .in("id", ids);
+  if (reserveError) {
+    // Could not reserve the batch; drop it so the next sweep retries cleanly
+    // rather than processing un-reserved rows.
+    console.error("[outbox] reserve failed:", reserveError.message);
+    return [];
+  }
   return rows;
 }
 
 async function markDone(admin: AdminClient, id: string): Promise<void> {
-  await admin
+  const { error } = await admin
     .from("delivery_jobs")
     .update({ status: "done", updated_at: new Date().toISOString() })
     .eq("id", id);
+  if (error) console.error("[outbox] markDone failed:", error.message);
 }
 
 async function markFailed(admin: AdminClient, job: DeliveryJob, error: string): Promise<void> {
   const attempts = job.attempts + 1;
   const dead = attempts >= job.max_attempts;
-  await admin
+  const { error: updateError } = await admin
     .from("delivery_jobs")
     .update({
       status: dead ? "dead" : "failed",
@@ -74,6 +90,7 @@ async function markFailed(admin: AdminClient, job: DeliveryJob, error: string): 
       updated_at: new Date().toISOString(),
     })
     .eq("id", job.id);
+  if (updateError) console.error("[outbox] markFailed failed:", updateError.message);
 }
 
 // Dispatch one job by kind. Throws on failure so processJob records the retry.
@@ -91,6 +108,7 @@ async function dispatch(job: DeliveryJob): Promise<void> {
     return;
   }
   if (job.kind === "owner_notify") {
+    // enqueue() (in the lead route) controls this payload shape; the cast is intentional.
     const ok = await sendOwnerLeadNotification(p as unknown as OwnerNotification);
     if (!ok) throw new Error("owner notify returned false");
     return;
