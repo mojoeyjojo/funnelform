@@ -124,3 +124,74 @@ export async function sendOwnerLeadNotification(n: OwnerNotification): Promise<b
     return false;
   }
 }
+
+// Resolve the From/Reply-To for a lead follow-up. Default sends from the verified
+// Treeflow subdomain with the owner's brand as the display name and replies routed
+// to the owner inbox (beats a no-reply sender). customFrom is the verified custom
+// domain address (Phase 3); until provisioned, customFrom is null and we fall back
+// to the subdomain even when mode is custom_domain.
+const FOLLOWUP_SUBDOMAIN_ADDRESS = "leads@contact.treeflow.tech";
+
+export interface FollowUpSenderInput {
+  mode: "subdomain" | "custom_domain";
+  brandName: string;
+  ownerEmail: string;
+  customFrom: string | null;
+}
+
+export function resolveFollowUpSender(input: FollowUpSenderInput): {
+  from: string;
+  replyTo: string;
+} {
+  if (input.mode === "custom_domain" && input.customFrom) {
+    return { from: input.customFrom, replyTo: input.ownerEmail };
+  }
+  // Strip characters that would break the "Name <addr>" header.
+  const safeName = input.brandName.replace(/[<>"]/g, "").trim() || "Treeflow";
+  return {
+    from: `${safeName} <${FOLLOWUP_SUBDOMAIN_ADDRESS}>`,
+    replyTo: input.ownerEmail,
+  };
+}
+
+export interface FollowUpEmail {
+  to: string;
+  from: string;
+  replyTo: string;
+  subject: string;
+  html: string;
+}
+
+// Send one follow-up email via Resend. Returns true on a 2xx. Never throws (the
+// outbox decides retry from the boolean), mirroring sendOwnerLeadNotification.
+export async function sendFollowUpEmail(email: FollowUpEmail): Promise<boolean> {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    console.error("[email] RESEND_API_KEY not set; cannot send follow-up");
+    return false;
+  }
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: email.from,
+        to: email.to,
+        reply_to: email.replyTo,
+        subject: email.subject,
+        html: email.html,
+      }),
+    });
+    if (!res.ok) {
+      console.error("[email] follow-up send failed:", res.status, await res.text());
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error("[email] follow-up send error:", err instanceof Error ? err.message : err);
+    return false;
+  }
+}
