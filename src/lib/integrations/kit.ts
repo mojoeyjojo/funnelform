@@ -38,7 +38,7 @@ export const kit: EmailDestination = {
   async upsertSubscriber(creds: EspCredentials, targetId: string, contact: EspContact) {
     const sub = await call(creds.apiKey, "/subscribers", {
       method: "POST",
-      body: JSON.stringify({ email_address: contact.email, first_name: contact.name ?? undefined }),
+      body: JSON.stringify({ email_address: contact.email, first_name: contact.name ?? undefined, fields: contact.fields }),
     });
     if (!sub.ok) throw new Error(`Kit subscriber ${sub.status}`);
     const form = await call(creds.apiKey, `/forms/${targetId}/subscribers`, {

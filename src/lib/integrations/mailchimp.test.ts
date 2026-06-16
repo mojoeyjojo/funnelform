@@ -33,6 +33,7 @@ describe("mailchimp adapter", () => {
       email: "Sam@Example.com",
       name: "Sam",
       tags: ["Beginner"],
+      fields: {},
     });
     const hash = createHash("md5").update("sam@example.com").digest("hex");
     expect(calls[0].method).toBe("PUT");
@@ -50,8 +51,18 @@ describe("mailchimp adapter", () => {
   it("throws when the upsert PUT fails", async () => {
     mockFetch(() => new Response("{}", { status: 500 }));
     await expect(
-      mailchimp.upsertSubscriber({ apiKey: KEY }, "listABC", { email: "a@b.com", name: null, tags: [] }),
+      mailchimp.upsertSubscriber({ apiKey: KEY }, "listABC", { email: "a@b.com", name: null, tags: [], fields: {} }),
     ).rejects.toThrow();
+  });
+
+  it("maps fields into uppercased merge_fields", async () => {
+    let putBody: Record<string, unknown> = {};
+    mockFetch((url, init) => {
+      if ((init.method as string) === "PUT") putBody = JSON.parse(init.body as string);
+      return new Response("{}", { status: 200 });
+    });
+    await mailchimp.upsertSubscriber({ apiKey: KEY }, "listABC", { email: "a@b.com", name: "A", tags: [], fields: { outcome: "Beginner" } });
+    expect((putBody.merge_fields as Record<string, string>).OUTCOME).toBe("Beginner");
   });
 
   it("rejects a crafted datacenter suffix that could redirect the host (SSRF)", async () => {

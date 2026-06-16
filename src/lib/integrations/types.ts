@@ -17,6 +17,7 @@ export interface EspContact {
   email: string;
   name: string | null;
   tags: string[]; // e.g. [outcome name, quiz title]
+  fields: Record<string, string>; // e.g. { outcome: "...", quiz: "..." }
 }
 
 export interface EmailDestination {

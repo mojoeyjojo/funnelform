@@ -206,6 +206,10 @@ export async function POST(request: Request) {
             // Tag the subscriber by outcome (and quiz title) so the owner can
             // segment. Empty entries are filtered so a missing outcome is fine.
             tags: [outcomeName, quiz.title].filter((t): t is string => Boolean(t)),
+            fields: {
+              ...(outcomeName ? { outcome: outcomeName } : {}),
+              ...(quiz.title ? { quiz: quiz.title } : {}),
+            },
           },
         },
       });

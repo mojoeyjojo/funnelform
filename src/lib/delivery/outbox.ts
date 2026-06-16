@@ -140,7 +140,7 @@ async function dispatch(admin: AdminClient, job: DeliveryJob): Promise<void> {
       job.owner_id,
       String(p.integrationId),
       String(p.targetId),
-      p.contact as { email: string; name: string | null; tags: string[] },
+      p.contact as { email: string; name: string | null; tags: string[]; fields: Record<string, string> },
     );
     return;
   }

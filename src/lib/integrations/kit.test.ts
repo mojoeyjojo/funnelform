@@ -27,7 +27,7 @@ describe("kit adapter", () => {
       if (url.endsWith("/tags")) return new Response(JSON.stringify({ tags: [{ id: 9, name: "Beginner" }] }), { status: 200 });
       return new Response("{}", { status: 200 });
     });
-    await kit.upsertSubscriber({ apiKey: "k" }, "form55", { email: "a@b.com", name: "A", tags: ["Beginner"] });
+    await kit.upsertSubscriber({ apiKey: "k" }, "form55", { email: "a@b.com", name: "A", tags: ["Beginner"], fields: {} });
     expect(calls.some((c) => c.url.endsWith("/v4/subscribers") && c.method === "POST")).toBe(true);
     expect(calls.some((c) => c.url.endsWith("/v4/forms/form55/subscribers"))).toBe(true);
     expect(calls.some((c) => c.url.endsWith("/v4/tags/9/subscribers"))).toBe(true);
@@ -36,7 +36,7 @@ describe("kit adapter", () => {
   it("throws when the subscriber upsert fails", async () => {
     mockFetch(() => new Response("{}", { status: 500 }));
     await expect(
-      kit.upsertSubscriber({ apiKey: "k" }, "form55", { email: "a@b.com", name: null, tags: [] }),
+      kit.upsertSubscriber({ apiKey: "k" }, "form55", { email: "a@b.com", name: null, tags: [], fields: {} }),
     ).rejects.toThrow();
   });
 
@@ -50,7 +50,7 @@ describe("kit adapter", () => {
         return new Response(JSON.stringify({ tag: { id: 77, name: "Beginner" } }), { status: 201 });
       return new Response("{}", { status: 200 });
     });
-    await kit.upsertSubscriber({ apiKey: "k" }, "form55", { email: "a@b.com", name: "A", tags: ["Beginner"] });
+    await kit.upsertSubscriber({ apiKey: "k" }, "form55", { email: "a@b.com", name: "A", tags: ["Beginner"], fields: {} });
     expect(calls.some((c) => c.url.endsWith("/v4/tags") && c.method === "POST")).toBe(true);
     expect(calls.some((c) => c.url.endsWith("/v4/tags/77/subscribers"))).toBe(true);
   });

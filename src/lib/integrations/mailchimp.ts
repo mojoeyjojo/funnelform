@@ -54,12 +54,15 @@ export const mailchimp: EmailDestination = {
   },
   async upsertSubscriber(creds: EspCredentials, targetId: string, contact: EspContact) {
     const hash = subscriberHash(contact.email);
+    const merge: Record<string, string> = {};
+    if (contact.name) merge.FNAME = contact.name;
+    for (const [k, v] of Object.entries(contact.fields)) merge[k.toUpperCase()] = v;
     const put = await call(creds.apiKey, `/lists/${targetId}/members/${hash}`, {
       method: "PUT",
       body: JSON.stringify({
         email_address: contact.email,
         status_if_new: "subscribed",
-        merge_fields: contact.name ? { FNAME: contact.name } : undefined,
+        merge_fields: Object.keys(merge).length > 0 ? merge : undefined,
       }),
     });
     if (!put.ok) throw new Error(`Mailchimp upsert ${put.status}`);
