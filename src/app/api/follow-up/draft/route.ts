@@ -10,6 +10,7 @@ const DraftSchema = z.object({
   outcomeName: z.string().max(200),
   outcomeDescription: z.string().max(2000),
   ownerName: z.string().max(200),
+  hasCta: z.boolean(),
 });
 
 // POST /api/follow-up/draft: authenticated, non-guest owners only. Drafts

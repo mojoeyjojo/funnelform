@@ -95,9 +95,9 @@ export async function POST(request: Request) {
         ?.outcomes ?? [];
     const matchedOutcome = outcomes.find((o) => o.id === outcome_id) ?? null;
     const outcomeName = matchedOutcome?.name ?? null;
-    // The lead's CTA: the matched outcome's offer link. Falls back to the site if
-    // somehow unset (publish validation requires a non-empty url, so this is rare).
-    const ctaLink = matchedOutcome?.cta?.url?.trim() || baseUrl;
+    // Empty when the outcome has no CTA. The editor warns and the AI draft omits
+    // {{cta_link}} for CTA-less outcomes, so an empty link should be rare.
+    const ctaLink = matchedOutcome?.cta?.url?.trim() ?? "";
 
     // Look up owner email once; reused for owner_notify job and follow-up sender.
     const { data: owner } = await admin

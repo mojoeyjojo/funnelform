@@ -493,6 +493,7 @@ export default function EditQuizClient({
                 id: o.id,
                 name: o.name,
                 description: o.description,
+                hasCta: Boolean(o.cta?.url?.trim()),
               }))}
             />
             <div className="mt-10">

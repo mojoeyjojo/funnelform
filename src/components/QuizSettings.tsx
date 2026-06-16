@@ -38,7 +38,7 @@ export function QuizSettings({
   followUp: FollowUpConfig;
   onFollowUp: (next: FollowUpConfig) => void;
   quizTitle: string;
-  outcomes: { id: string; name: string; description: string }[];
+  outcomes: { id: string; name: string; description: string; hasCta: boolean }[];
 }) {
   const [open, setOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -235,7 +235,7 @@ function FollowUpCard({
   followUp: FollowUpConfig;
   onFollowUp: (next: FollowUpConfig) => void;
   quizTitle: string;
-  outcomes: { id: string; name: string; description: string }[];
+  outcomes: { id: string; name: string; description: string; hasCta: boolean }[];
 }) {
   const [draftingId, setDraftingId] = useState<string | null>(null);
   const [draftError, setDraftError] = useState<string | null>(null);
@@ -255,7 +255,7 @@ function FollowUpCard({
     });
   }
 
-  async function draftOutcome(outcome: { id: string; name: string; description: string }) {
+  async function draftOutcome(outcome: { id: string; name: string; description: string; hasCta: boolean }) {
     setDraftingId(outcome.id);
     setDraftError(null);
     try {
@@ -271,6 +271,7 @@ function FollowUpCard({
           // {{owner_name}} token and the email From name also resolve to the title.
           // A dedicated owner display name is a Phase 2 enhancement.
           ownerName: quizTitle,
+          hasCta: outcome.hasCta,
         }),
       });
       if (!res.ok) throw new Error("draft_failed");
@@ -343,6 +344,12 @@ function FollowUpCard({
                     {isDrafting ? "Drafting..." : "AI draft"}
                   </button>
                 </div>
+                {!outcome.hasCta && (
+                  <p className="text-[11px] text-amber-600">
+                    This outcome has no CTA link, so {"{{cta_link}}"} will be empty. Add a CTA link to
+                    this outcome (in its outcome settings) to use it.
+                  </p>
+                )}
                 <input
                   type="text"
                   value={tpl.subject}

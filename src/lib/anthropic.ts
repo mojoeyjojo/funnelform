@@ -334,21 +334,27 @@ const FOLLOW_UP_SCHEMA = {
 /**
  * Draft a short follow-up email for one quiz outcome. Uses the Haiku model with
  * structured outputs so the result is always a valid JSON object with subject +
- * body. Tokens {{name}}, {{cta_link}}, {{quiz_title}}, {{owner_name}}, and
- * {{outcome}} are encouraged where natural. Under 150 words. No em dashes.
+ * body. Tokens {{name}}, {{quiz_title}}, {{owner_name}}, and {{outcome}} are
+ * encouraged where natural. {{cta_link}} is only used when hasCta is true.
+ * Under 150 words. No em dashes.
  */
 export async function draftFollowUpEmail(input: {
   quizTitle: string;
   outcomeName: string;
   outcomeDescription: string;
   ownerName: string;
+  hasCta: boolean;
 }): Promise<{ subject: string; body: string }> {
   const client = new Anthropic();
+  const ctaInstruction = input.hasCta
+    ? "- Use {{cta_link}} as the offer or booking call to action (e.g. for a button or \"book a call\" link)."
+    : "- Do NOT use {{cta_link}}: this outcome has no booking or offer link. Instead, close by inviting the reader to reply to this email directly.";
   const system = `You write short, friendly follow-up emails for quiz results pages.
 Rules:
 - "subject": a concise, compelling email subject line (under 10 words).
 - "body": a warm, personal email body, under 150 words.
-- Use the tokens {{name}} (recipient first name), {{cta_link}} (the owner's offer or booking link, e.g. for a button or "book a call" link), {{quiz_title}}, {{owner_name}}, and {{outcome}} where natural.
+- Use the tokens {{name}} (recipient first name), {{quiz_title}}, {{owner_name}}, and {{outcome}} where natural.
+${ctaInstruction}
 - No em dashes anywhere. No hype. No numbered lists.
 - Close warmly but do not invent a sign-off name; use {{owner_name}}.`;
   const user = `Quiz title: ${input.quizTitle}
