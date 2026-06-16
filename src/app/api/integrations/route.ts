@@ -50,13 +50,27 @@ export async function POST(request: Request) {
       { status: 422 },
     );
 
+  // Encrypt in its own guard: a missing or malformed INTEGRATIONS_ENC_KEY would
+  // otherwise throw here and surface as a non-JSON 500 (the client then shows a
+  // misleading "could not connect"). Fail clean with a clear server error.
+  let encrypted: string;
+  try {
+    encrypted = encryptSecret(parsed.data.apiKey);
+  } catch (err) {
+    console.error("[integrations] encrypt failed:", err instanceof Error ? err.message : err);
+    return NextResponse.json(
+      { error: "Server could not secure the key. Please try again shortly." },
+      { status: 500 },
+    );
+  }
+
   const { data, error } = await supabase
     .from("integrations")
     .upsert(
       {
         owner_id: user.id,
         provider: parsed.data.provider,
-        encrypted_credentials: encryptSecret(parsed.data.apiKey),
+        encrypted_credentials: encrypted,
         status: "active",
         last_error: null,
         updated_at: new Date().toISOString(),
@@ -66,11 +80,13 @@ export async function POST(request: Request) {
     .select("id, provider, status")
     .single();
 
-  if (error)
+  if (error) {
+    console.error("[integrations] upsert failed:", error.message);
     return NextResponse.json(
       { error: "Could not save connection" },
       { status: 500 },
     );
+  }
 
   const targets = await adapter
     .listTargets({ apiKey: parsed.data.apiKey })
