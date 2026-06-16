@@ -113,3 +113,23 @@ export interface DeliveryJob {
   send_after: string;
   last_error: string | null;
 }
+
+// ESP integrations (see supabase/migrations/0010_integrations.sql).
+export type EspProvider = "kit" | "mailchimp";
+
+export interface Integration {
+  id: string;
+  owner_id: string;
+  provider: EspProvider;
+  status: "active" | "needs_reconnect";
+  last_error: string | null;
+}
+
+// Per-quiz: push captured leads to this connection's target list/form. Stored in
+// the quiz delivery jsonb as `destinations: QuizDestination[]`.
+export interface QuizDestination {
+  integrationId: string;
+  provider: EspProvider;
+  targetId: string;
+  targetName: string;
+}
