@@ -133,3 +133,12 @@ export interface QuizDestination {
   targetId: string;
   targetName: string;
 }
+
+// Custom sending domain for follow-up email (see 0013_sending_domains.sql).
+export interface SendingDomain {
+  id: string;
+  domain: string;
+  from_local: string;
+  status: "pending" | "verified" | "failed";
+  dns_records: { record: string; name: string; type: string; value: string; status: string }[];
+}
