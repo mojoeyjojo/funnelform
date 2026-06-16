@@ -16,7 +16,9 @@ if (!key) {
   process.exit(1);
 }
 const stripe = new Stripe(key);
-const mode = key.startsWith("sk_live") ? "LIVE" : "test";
+// Mode is decided by the key prefix, not by us. Both secret (sk_) and restricted
+// (rk_) keys carry _live_ or _test_, so match the substring rather than sk_live.
+const mode = key.includes("_live_") ? "LIVE" : "test";
 
 const PLANS = [
   { lookupKey: "ff_pro_monthly", amount: 3900, interval: "month" },
