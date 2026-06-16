@@ -24,8 +24,7 @@ async function call(token: string, path: string, init?: RequestInit): Promise<Re
 }
 
 export const mailerlite: EmailDestination = {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  id: "mailerlite" as any,
+  id: "mailerlite",
   label: "MailerLite",
   async validateCredentials(creds: EspCredentials) {
     try {

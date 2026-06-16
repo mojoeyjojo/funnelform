@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import type { OutputRating, QuizDestination } from "@/lib/types";
+import type { EspProvider, OutputRating, QuizDestination } from "@/lib/types";
 import type { FollowUpConfig } from "@/lib/delivery/templates";
 
 export function QuizSettings({
@@ -239,6 +239,16 @@ type IntegrationRow = { id: string; provider: string; status: string };
 // Shape returned by POST /api/integrations and GET /api/integrations/[id].
 type TargetRow = { id: string; name: string };
 
+const PROVIDERS: { id: EspProvider; label: string }[] = [
+  { id: "mailchimp", label: "Mailchimp" },
+  { id: "kit", label: "Kit (ConvertKit)" },
+  { id: "mailerlite", label: "MailerLite" },
+  { id: "brevo", label: "Brevo" },
+];
+const PROVIDER_LABEL: Record<string, string> = Object.fromEntries(
+  PROVIDERS.map((p) => [p.id, p.label]),
+);
+
 function IntegrationsCard({
   destinations,
   onDestinations,
@@ -255,7 +265,7 @@ function IntegrationsCard({
 
   // Connect form state: one provider can be in "connecting" mode at a time.
   // Storing the draft key only until the POST succeeds, then it is cleared.
-  const [connectingProvider, setConnectingProvider] = useState<"kit" | "mailchimp" | null>(null);
+  const [connectingProvider, setConnectingProvider] = useState<EspProvider | null>(null);
   const [draftKey, setDraftKey] = useState("");
   const [connectError, setConnectError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
@@ -311,7 +321,7 @@ function IntegrationsCard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [integrations]);
 
-  async function connect(provider: "kit" | "mailchimp") {
+  async function connect(provider: EspProvider) {
     setConnecting(true);
     setConnectError(null);
     try {
@@ -394,8 +404,6 @@ function IntegrationsCard({
     onDestinations(destinations.filter((d) => d.integrationId !== integrationId));
   }
 
-  const providerLabel: Record<string, string> = { kit: "Kit", mailchimp: "Mailchimp" };
-
   const connectedProviders = new Set((integrations ?? []).map((i) => i.provider));
 
   return (
@@ -426,7 +434,7 @@ function IntegrationsCard({
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-semibold">
-                      {providerLabel[integration.provider] ?? integration.provider}
+                      {PROVIDER_LABEL[integration.provider] ?? integration.provider}
                     </span>
                     {integration.status === "needs_reconnect" ? (
                       <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
@@ -443,7 +451,7 @@ function IntegrationsCard({
                       <button
                         type="button"
                         onClick={() => {
-                          setConnectingProvider(integration.provider as "kit" | "mailchimp");
+                          setConnectingProvider(integration.provider as EspProvider);
                           setDraftKey("");
                           setConnectError(null);
                         }}
@@ -513,7 +521,7 @@ function IntegrationsCard({
       {connectingProvider && (
         <div className="mt-4 space-y-2">
           <p className="text-xs font-semibold">
-            {connectingProvider === "kit" ? "Kit" : "Mailchimp"} API key
+            {PROVIDER_LABEL[connectingProvider] ?? connectingProvider} API key
           </p>
           <input
             type="password"
@@ -553,22 +561,20 @@ function IntegrationsCard({
       {/* Buttons to connect a provider that is not yet connected */}
       {!connectingProvider && (
         <div className="mt-4 flex flex-wrap gap-2">
-          {(["kit", "mailchimp"] as const)
-            .filter((p) => !connectedProviders.has(p))
-            .map((p) => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => {
-                  setConnectingProvider(p);
-                  setDraftKey("");
-                  setConnectError(null);
-                }}
-                className="rounded-full border border-[var(--hairline)] px-4 py-2 text-xs font-semibold text-[var(--e-text-2)] transition-colors hover:border-black/20 hover:text-[var(--foreground)]"
-              >
-                {p === "kit" ? "Connect Kit" : "Connect Mailchimp"}
-              </button>
-            ))}
+          {PROVIDERS.filter((p) => !connectedProviders.has(p.id)).map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => {
+                setConnectingProvider(p.id);
+                setDraftKey("");
+                setConnectError(null);
+              }}
+              className="rounded-full border border-[var(--hairline)] px-4 py-2 text-xs font-semibold text-[var(--e-text-2)] transition-colors hover:border-black/20 hover:text-[var(--foreground)]"
+            >
+              Connect {p.label}
+            </button>
+          ))}
         </div>
       )}
     </div>

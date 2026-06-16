@@ -23,7 +23,7 @@ const DestinationsSchema = z
   .array(
     z.object({
       integrationId: z.string().uuid(),
-      provider: z.enum(["kit", "mailchimp"]),
+      provider: z.enum(["kit", "mailchimp", "mailerlite", "brevo"]),
       targetId: z.string().min(1),
       targetName: z.string().max(200),
     }),

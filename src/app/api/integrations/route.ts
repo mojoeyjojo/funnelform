@@ -22,7 +22,7 @@ export async function GET() {
 }
 
 const ConnectSchema = z.object({
-  provider: z.enum(["kit", "mailchimp"]),
+  provider: z.enum(["kit", "mailchimp", "mailerlite", "brevo"]),
   apiKey: z.string().min(8).max(500),
 });
 

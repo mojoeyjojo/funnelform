@@ -19,8 +19,7 @@ async function call(key: string, path: string, init?: RequestInit): Promise<Resp
 }
 
 export const brevo: EmailDestination = {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  id: "brevo" as any,
+  id: "brevo",
   label: "Brevo",
   async validateCredentials(creds: EspCredentials) {
     try {

@@ -115,7 +115,7 @@ export interface DeliveryJob {
 }
 
 // ESP integrations (see supabase/migrations/0010_integrations.sql).
-export type EspProvider = "kit" | "mailchimp";
+export type EspProvider = "kit" | "mailchimp" | "mailerlite" | "brevo";
 
 export interface Integration {
   id: string;
