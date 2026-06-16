@@ -8,7 +8,7 @@ import "server-only";
 // Config: RESEND_API_KEY + RESEND_FROM (e.g. "Treeflow <leads@yourdomain>").
 // No-ops (logs once) if unconfigured, so the player/lead flow runs regardless.
 
-type OwnerNotification = {
+export type OwnerNotification = {
   ownerEmail: string;
   quizTitle: string;
   leadName?: string | null;
