@@ -32,4 +32,24 @@ describe("kit adapter", () => {
     expect(calls.some((c) => c.url.endsWith("/v4/forms/form55/subscribers"))).toBe(true);
     expect(calls.some((c) => c.url.endsWith("/v4/tags/9/subscribers"))).toBe(true);
   });
+
+  it("throws when the subscriber upsert fails", async () => {
+    mockFetch(() => new Response("{}", { status: 500 }));
+    await expect(
+      kit.upsertSubscriber({ apiKey: "k" }, "form55", { email: "a@b.com", name: null, tags: [] }),
+    ).rejects.toThrow();
+  });
+
+  it("skips tagging (no throw) when no tag name matches", async () => {
+    const calls: string[] = [];
+    mockFetch((url) => {
+      calls.push(url);
+      if (url.endsWith("/tags")) return new Response(JSON.stringify({ tags: [{ id: 1, name: "Other" }] }), { status: 200 });
+      return new Response("{}", { status: 200 });
+    });
+    await expect(
+      kit.upsertSubscriber({ apiKey: "k" }, "form55", { email: "a@b.com", name: "A", tags: ["Beginner"] }),
+    ).resolves.toBeUndefined();
+    expect(calls.some((u) => /\/tags\/\d+\/subscribers$/.test(u))).toBe(false);
+  });
 });

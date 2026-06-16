@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { createHash } from "node:crypto";
 vi.mock("server-only", () => ({}));
 import { mailchimp } from "./mailchimp";
 
@@ -33,8 +34,9 @@ describe("mailchimp adapter", () => {
       name: "Sam",
       tags: ["Beginner"],
     });
+    const hash = createHash("md5").update("sam@example.com").digest("hex");
     expect(calls[0].method).toBe("PUT");
-    expect(calls[0].url).toContain("/lists/listABC/members/");
+    expect(calls[0].url).toContain(`/lists/listABC/members/${hash}`);
     expect(calls[1].method).toBe("POST");
     expect(calls[1].url).toContain("/tags");
   });
@@ -43,5 +45,12 @@ describe("mailchimp adapter", () => {
     mockFetch(() => new Response("{}", { status: 401 }));
     const res = await mailchimp.validateCredentials({ apiKey: KEY });
     expect(res.ok).toBe(false);
+  });
+
+  it("throws when the upsert PUT fails", async () => {
+    mockFetch(() => new Response("{}", { status: 500 }));
+    await expect(
+      mailchimp.upsertSubscriber({ apiKey: KEY }, "listABC", { email: "a@b.com", name: null, tags: [] }),
+    ).rejects.toThrow();
   });
 });

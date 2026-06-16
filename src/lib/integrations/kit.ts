@@ -47,21 +47,20 @@ export const kit: EmailDestination = {
     if (!form.ok) throw new Error(`Kit form add ${form.status}`);
     if (contact.tags.length > 0) {
       const tagsRes = await call(creds.apiKey, "/tags");
-      if (tagsRes.ok) {
-        const data = (await tagsRes.json()) as { tags?: { id: number; name: string }[] };
-        const existing = data.tags ?? [];
-        for (const tagName of contact.tags) {
-          const match = existing.find((t) => t.name.toLowerCase() === tagName.toLowerCase());
-          if (!match) {
-            console.warn(`[kit] no tag named "${tagName}"; skipping (create it in Kit to enable tagging)`);
-            continue;
-          }
-          const tagRes = await call(creds.apiKey, `/tags/${match.id}/subscribers`, {
-            method: "POST",
-            body: JSON.stringify({ email_address: contact.email }),
-          });
-          if (!tagRes.ok) throw new Error(`Kit tag ${tagRes.status}`);
+      if (!tagsRes.ok) throw new Error(`Kit tags lookup ${tagsRes.status}`);
+      const data = (await tagsRes.json()) as { tags?: { id: number; name: string }[] };
+      const existing = data.tags ?? [];
+      for (const tagName of contact.tags) {
+        const match = existing.find((t) => t.name.toLowerCase() === tagName.toLowerCase());
+        if (!match) {
+          console.warn(`[kit] no tag named "${tagName}"; skipping (create it in Kit to enable tagging)`);
+          continue;
         }
+        const tagRes = await call(creds.apiKey, `/tags/${match.id}/subscribers`, {
+          method: "POST",
+          body: JSON.stringify({ email_address: contact.email }),
+        });
+        if (!tagRes.ok) throw new Error(`Kit tag ${tagRes.status}`);
       }
     }
   },
