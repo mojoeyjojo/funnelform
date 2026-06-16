@@ -334,7 +334,7 @@ const FOLLOW_UP_SCHEMA = {
 /**
  * Draft a short follow-up email for one quiz outcome. Uses the Haiku model with
  * structured outputs so the result is always a valid JSON object with subject +
- * body. Tokens {{name}}, {{result_link}}, {{quiz_title}}, {{owner_name}}, and
+ * body. Tokens {{name}}, {{cta_link}}, {{quiz_title}}, {{owner_name}}, and
  * {{outcome}} are encouraged where natural. Under 150 words. No em dashes.
  */
 export async function draftFollowUpEmail(input: {
@@ -348,7 +348,7 @@ export async function draftFollowUpEmail(input: {
 Rules:
 - "subject": a concise, compelling email subject line (under 10 words).
 - "body": a warm, personal email body, under 150 words.
-- Use the tokens {{name}} (recipient first name), {{result_link}} (link to their result), {{quiz_title}}, {{owner_name}}, and {{outcome}} where natural.
+- Use the tokens {{name}} (recipient first name), {{cta_link}} (the owner's offer or booking link, e.g. for a button or "book a call" link), {{quiz_title}}, {{owner_name}}, and {{outcome}} where natural.
 - No em dashes anywhere. No hype. No numbered lists.
 - Close warmly but do not invent a sign-off name; use {{owner_name}}.`;
   const user = `Quiz title: ${input.quizTitle}

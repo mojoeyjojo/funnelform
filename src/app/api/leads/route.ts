@@ -84,9 +84,20 @@ export async function POST(request: Request) {
       session_id,
     });
 
-    // Resolve the result name once: owner-notify and follow-up email both use it.
-    const outcomes = (quiz.config as { outcomes?: { id: string; name: string }[] } | null)?.outcomes ?? [];
-    const outcomeName = outcomes.find((o) => o.id === outcome_id)?.name ?? null;
+    // Resolve the matched outcome once: owner-notify + follow-up email use its
+    // name, and the follow-up link uses its CTA url (the owner's offer/booking
+    // link). baseUrl is the canonical host for on-platform links: APP_BASE_URL in
+    // production (so emails never point at a preview/localhost host), request
+    // origin as the local-dev fallback.
+    const baseUrl = process.env.APP_BASE_URL?.replace(/\/+$/, "") || new URL(request.url).origin;
+    const outcomes =
+      (quiz.config as { outcomes?: { id: string; name: string; cta?: { url?: string } }[] } | null)
+        ?.outcomes ?? [];
+    const matchedOutcome = outcomes.find((o) => o.id === outcome_id) ?? null;
+    const outcomeName = matchedOutcome?.name ?? null;
+    // The lead's CTA: the matched outcome's offer link. Falls back to the site if
+    // somehow unset (publish validation requires a non-empty url, so this is rare).
+    const ctaLink = matchedOutcome?.cta?.url?.trim() || baseUrl;
 
     // Look up owner email once; reused for owner_notify job and follow-up sender.
     const { data: owner } = await admin
@@ -118,7 +129,7 @@ export async function POST(request: Request) {
           leadEmail: email,
           leadPhone: phone ?? null,
           outcomeName,
-          leadsUrl: `${new URL(request.url).origin}/leads/${quiz_id}`,
+          leadsUrl: `${baseUrl}/leads/${quiz_id}`,
         },
       });
     }
@@ -167,7 +178,10 @@ export async function POST(request: Request) {
           vars: {
             name: cleanName ?? "there",
             outcome: outcomeName ?? "",
-            result_link: `${new URL(request.url).origin}/q/${quiz.slug ?? ""}`,
+            // The actionable link in the follow-up: the outcome's offer/booking
+            // CTA. result_link is kept as an alias so older templates still work.
+            cta_link: ctaLink,
+            result_link: ctaLink,
             quiz_title: quiz.title ?? "",
             owner_name: quiz.title ?? "",
           },

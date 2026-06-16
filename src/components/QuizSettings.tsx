@@ -320,7 +320,7 @@ function FollowUpCard({
           <p className="text-[11px] text-[var(--muted)]">
             Available tokens: <code className="font-mono">{"{{name}}"}</code>,{" "}
             <code className="font-mono">{"{{outcome}}"}</code>,{" "}
-            <code className="font-mono">{"{{result_link}}"}</code>,{" "}
+            <code className="font-mono">{"{{cta_link}}"}</code>,{" "}
             <code className="font-mono">{"{{quiz_title}}"}</code>,{" "}
             <code className="font-mono">{"{{owner_name}}"}</code>
           </p>
