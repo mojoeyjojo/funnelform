@@ -53,4 +53,9 @@ describe("mailchimp adapter", () => {
       mailchimp.upsertSubscriber({ apiKey: KEY }, "listABC", { email: "a@b.com", name: null, tags: [] }),
     ).rejects.toThrow();
   });
+
+  it("rejects a crafted datacenter suffix that could redirect the host (SSRF)", async () => {
+    const res = await mailchimp.validateCredentials({ apiKey: "key-evil.com#" });
+    expect(res.ok).toBe(false);
+  });
 });

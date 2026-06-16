@@ -2,14 +2,12 @@ import "server-only";
 import { createHash } from "node:crypto";
 import type { EmailDestination, EspContact, EspCredentials, EspTarget } from "./types";
 
-// Datacenter is the suffix after the final hyphen of the API key.
-function dc(apiKey: string): string {
-  const parts = apiKey.split("-");
-  return parts[parts.length - 1] || "us1";
-}
-
-function base(apiKey: string): string {
-  return `https://${dc(apiKey)}.api.mailchimp.com/3.0`;
+// Datacenter is the suffix after the final hyphen of the key, and must look like
+// a real Mailchimp dc (e.g. us21). Anything else is rejected to prevent the dc
+// from being abused to redirect the request host (SSRF).
+function parseDc(apiKey: string): string | null {
+  const m = apiKey.match(/-([a-z]{2,4}\d{1,3})$/);
+  return m ? m[1] : null;
 }
 
 function authHeader(apiKey: string): string {
@@ -21,12 +19,15 @@ function subscriberHash(email: string): string {
 }
 
 async function call(apiKey: string, path: string, init?: RequestInit): Promise<Response> {
+  const dc = parseDc(apiKey);
+  if (!dc) throw new Error("invalid Mailchimp API key format");
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);
   try {
-    return await fetch(`${base(apiKey)}${path}`, {
+    return await fetch(`https://${dc}.api.mailchimp.com/3.0${path}`, {
       ...init,
       headers: { Authorization: authHeader(apiKey), "Content-Type": "application/json", ...(init?.headers ?? {}) },
+      redirect: "manual",
       signal: controller.signal,
     });
   } finally {

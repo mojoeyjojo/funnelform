@@ -12,17 +12,19 @@ type AdminClient = ReturnType<typeof createSupabaseAdminClient>;
 // connection is flagged needs_reconnect.
 export async function pushToIntegration(
   admin: AdminClient,
+  ownerId: string,
   integrationId: string,
   targetId: string,
   contact: EspContact,
 ): Promise<void> {
   const { data, error } = await admin
     .from("integrations")
-    .select("provider, encrypted_credentials, status")
+    .select("provider, encrypted_credentials, status, owner_id")
     .eq("id", integrationId)
     .maybeSingle();
   if (error) throw new Error(`integration lookup failed: ${error.message}`);
   if (!data) throw new Error("integration not found");
+  if (data.owner_id !== ownerId) throw new Error("integration owner mismatch");
   const provider = data.provider as EspProvider;
   const apiKey = decryptSecret(data.encrypted_credentials as string);
   try {

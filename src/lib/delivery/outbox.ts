@@ -137,6 +137,7 @@ async function dispatch(admin: AdminClient, job: DeliveryJob): Promise<void> {
   if (job.kind === "esp_push") {
     await pushToIntegration(
       admin,
+      job.owner_id,
       String(p.integrationId),
       String(p.targetId),
       p.contact as { email: string; name: string | null; tags: string[] },

@@ -113,6 +113,24 @@ export async function PATCH(
     }
   }
 
+  // Authorization: every destination's integration must belong to the caller,
+  // and its provider must match. RLS already scopes this select to the owner;
+  // the explicit eq is defense in depth. Prevents pointing a quiz at another
+  // owner's ESP connection (cross-tenant abuse).
+  if (parsed.data.destinations && parsed.data.destinations.length > 0) {
+    const ids = parsed.data.destinations.map((d) => d.integrationId);
+    const { data: owned } = await supabase
+      .from("integrations")
+      .select("id, provider")
+      .in("id", ids)
+      .eq("owner_id", user.id);
+    const ownedProvider = new Map((owned ?? []).map((r) => [r.id as string, r.provider as string]));
+    const bad = parsed.data.destinations.some((d) => ownedProvider.get(d.integrationId) !== d.provider);
+    if (bad) {
+      return NextResponse.json({ error: "Unknown or unauthorized integration." }, { status: 422 });
+    }
+  }
+
   // Build the column update explicitly. `whatsapp` and `webhook` both map into
   // the delivery jsonb, they are not their own columns, so they must not be
   // spread in. The editor sends both current values on save, so a full rebuild

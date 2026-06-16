@@ -10,6 +10,7 @@ async function call(apiKey: string, path: string, init?: RequestInit): Promise<R
     return await fetch(`${BASE}${path}`, {
       ...init,
       headers: { "X-Kit-Api-Key": apiKey, "Content-Type": "application/json", ...(init?.headers ?? {}) },
+      redirect: "manual",
       signal: controller.signal,
     });
   } finally {
