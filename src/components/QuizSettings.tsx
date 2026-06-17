@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { EspProvider, OutputRating, QuizDestination, SendingDomain } from "@/lib/types";
 import type { FollowUpConfig } from "@/lib/delivery/templates";
@@ -594,11 +594,50 @@ function SendingDomainCard() {
   const [addError, setAddError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
 
-  const [verifying, setVerifying] = useState(false);
+  // "idle" = no check running; "checking" = polling Resend; "timeout" = polled
+  // the full window without verifying (DNS may still be propagating).
+  const [verifyPhase, setVerifyPhase] = useState<"idle" | "checking" | "timeout">("idle");
   const [verifyError, setVerifyError] = useState<string | null>(null);
 
   const [removing, setRemoving] = useState(false);
   const [removeError, setRemoveError] = useState<string | null>(null);
+
+  // Poll the read-only status endpoint every 5s, for up to 3 minutes, after a
+  // single trigger. Refs let us cancel cleanly on unmount / re-trigger.
+  const POLL_INTERVAL_MS = 5000;
+  const POLL_WINDOW_MS = 3 * 60 * 1000;
+  const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollCancelled = useRef(false);
+
+  function stopPolling() {
+    pollCancelled.current = true;
+    if (pollTimer.current) {
+      clearTimeout(pollTimer.current);
+      pollTimer.current = null;
+    }
+  }
+
+  // Merge a status (and refreshed DNS records) into the displayed domain.
+  function applyStatus(status: string, dnsRecords?: SendingDomain["dns_records"]) {
+    setDomain((prev) =>
+      prev
+        ? { ...prev, status: status as SendingDomain["status"], dns_records: dnsRecords ?? prev.dns_records }
+        : prev,
+    );
+  }
+
+  // Read-only check (GET): syncs status + per-record DNS state, no re-trigger.
+  async function checkStatusOnce(): Promise<string | null> {
+    try {
+      const res = await fetch("/api/sending-domain/verify");
+      if (!res.ok) return null;
+      const data = (await res.json()) as { status?: string; dnsRecords?: SendingDomain["dns_records"] };
+      if (data.status) applyStatus(data.status, data.dnsRecords);
+      return data.status ?? null;
+    } catch {
+      return null;
+    }
+  }
 
   async function loadDomain() {
     setLoadState("loading");
@@ -610,6 +649,10 @@ function SendingDomainCard() {
       if (data.sendingDomain) {
         setDomain(data.sendingDomain);
         setLoadState("loaded");
+        // Self-heal: a row can read "pending" after Resend has already verified
+        // in the background. One silent read-only check on load reconciles it
+        // without the owner having to press Verify.
+        if (data.sendingDomain.status === "pending") void checkStatusOnce();
       } else {
         setDomain(null);
         setLoadState("none");
@@ -619,10 +662,11 @@ function SendingDomainCard() {
     }
   }
 
-  // Load on mount.
+  // Load on mount; stop any poll on unmount.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadDomain();
+    return () => stopPolling();
   }, []);
 
   async function addDomain() {
@@ -657,25 +701,58 @@ function SendingDomainCard() {
     }
   }
 
+  // Trigger verification ONCE, then poll the read-only check until it verifies,
+  // fails, or the window elapses. No further clicks needed.
   async function verifyDomain() {
-    setVerifying(true);
+    stopPolling();
+    pollCancelled.current = false;
     setVerifyError(null);
+    setVerifyPhase("checking");
+
+    // 1. Trigger once.
+    let status: string | null = null;
     try {
       const res = await fetch("/api/sending-domain/verify", { method: "POST" });
-      const data = (await res.json()) as { status?: string; error?: string };
+      const data = (await res.json()) as { status?: string; dnsRecords?: SendingDomain["dns_records"]; error?: string };
       if (!res.ok) {
         setVerifyError(data.error ?? "Verification failed. Please try again.");
+        setVerifyPhase("idle");
         return;
       }
-      // Update the displayed status from the response.
-      if (data.status && domain) {
-        setDomain({ ...domain, status: data.status as SendingDomain["status"] });
-      }
+      if (data.status) applyStatus(data.status, data.dnsRecords);
+      status = data.status ?? null;
     } catch {
       setVerifyError("Could not verify. Please try again.");
-    } finally {
-      setVerifying(false);
+      setVerifyPhase("idle");
+      return;
     }
+    if (status === "verified") {
+      setVerifyPhase("idle");
+      return;
+    }
+
+    // 2. Poll read-only until resolved or the window elapses.
+    const deadline = Date.now() + POLL_WINDOW_MS;
+    const tick = async () => {
+      if (pollCancelled.current) return;
+      const s = await checkStatusOnce();
+      if (pollCancelled.current) return;
+      if (s === "verified") {
+        setVerifyPhase("idle");
+        return;
+      }
+      if (s === "failed") {
+        setVerifyError("DNS check failed. Confirm the records below match exactly, then verify again.");
+        setVerifyPhase("idle");
+        return;
+      }
+      if (Date.now() >= deadline) {
+        setVerifyPhase("timeout");
+        return;
+      }
+      pollTimer.current = setTimeout(() => void tick(), POLL_INTERVAL_MS);
+    };
+    pollTimer.current = setTimeout(() => void tick(), POLL_INTERVAL_MS);
   }
 
   async function removeDomain() {
@@ -760,13 +837,17 @@ function SendingDomainCard() {
             <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
               Verified
             </span>
+          ) : verifyPhase === "checking" ? (
+            <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+              Checking...
+            </span>
           ) : rec.status === "failed" ? (
             <span className="shrink-0 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
               Failed
             </span>
           ) : (
             <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
-              Pending
+              Not verified
             </span>
           )}
         </div>
@@ -774,11 +855,11 @@ function SendingDomainCard() {
           {rec.status !== "verified" && (
             <button
               type="button"
-              disabled={verifying}
+              disabled={verifyPhase === "checking"}
               onClick={() => void verifyDomain()}
               className="text-[11px] font-semibold text-[var(--signal)] underline underline-offset-2 disabled:opacity-40"
             >
-              {verifying ? "Checking..." : "Verify"}
+              {verifyPhase === "checking" ? "Verifying..." : "Verify"}
             </button>
           )}
           <button
@@ -792,7 +873,17 @@ function SendingDomainCard() {
         </div>
       </div>
 
-      {/* Inline errors */}
+      {/* Progress + status messages */}
+      {verifyPhase === "checking" && (
+        <p className="text-[11px] text-[var(--muted)]">
+          Checking your DNS records. This can take a few minutes. You can leave this page; we will re-check when you come back.
+        </p>
+      )}
+      {verifyPhase === "timeout" && (
+        <p className="text-[11px] font-semibold text-amber-700">
+          Not verified yet. DNS changes can take up to a few hours to spread. Come back later and verify again.
+        </p>
+      )}
       {verifyError && (
         <p className="text-[11px] font-semibold text-rose-600">{verifyError}</p>
       )}
@@ -804,7 +895,7 @@ function SendingDomainCard() {
       {rec.dns_records.length > 0 && (
         <div className="space-y-1.5">
           <p className="text-[11px] font-semibold text-[var(--muted)]">
-            Add these DNS records at your registrar:
+            Add these DNS records at your registrar, then click Verify:
           </p>
           <div className="overflow-x-auto rounded-[10px] border border-[var(--hairline)]">
             <table className="w-full border-collapse text-[11px]">
@@ -813,6 +904,7 @@ function SendingDomainCard() {
                   <th className="px-3 py-2 text-left font-semibold text-[var(--muted)]">Type</th>
                   <th className="px-3 py-2 text-left font-semibold text-[var(--muted)]">Name</th>
                   <th className="px-3 py-2 text-left font-semibold text-[var(--muted)]">Value</th>
+                  <th className="px-3 py-2 text-left font-semibold text-[var(--muted)]">Priority</th>
                   <th className="px-3 py-2 text-left font-semibold text-[var(--muted)]">Status</th>
                 </tr>
               </thead>
@@ -825,9 +917,14 @@ function SendingDomainCard() {
                     <td className="px-3 py-2 font-mono text-[var(--foreground)]">{r.type}</td>
                     <td className="px-3 py-2 font-mono text-[var(--foreground)] break-all">{r.name}</td>
                     <td className="px-3 py-2 font-mono text-[var(--foreground)] break-all">{r.value}</td>
+                    <td className="px-3 py-2 font-mono text-[var(--foreground)]">
+                      {r.priority ?? ""}
+                    </td>
                     <td className="px-3 py-2">
                       {r.status === "verified" ? (
                         <span className="text-emerald-600">OK</span>
+                      ) : r.status === "failed" ? (
+                        <span className="text-rose-600">Failed</span>
                       ) : (
                         <span className="text-amber-600">Pending</span>
                       )}
@@ -837,6 +934,9 @@ function SendingDomainCard() {
               </tbody>
             </table>
           </div>
+          <p className="text-[10px] text-[var(--muted)]">
+            Name values are relative to your root domain. Most registrars add the domain for you, so paste the name as shown.
+          </p>
         </div>
       )}
     </div>

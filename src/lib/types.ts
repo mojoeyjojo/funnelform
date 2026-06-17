@@ -140,5 +140,5 @@ export interface SendingDomain {
   domain: string;
   from_local: string;
   status: "pending" | "verified" | "failed";
-  dns_records: { record: string; name: string; type: string; value: string; status: string }[];
+  dns_records: { record: string; name: string; type: string; value: string; status: string; ttl?: string; priority?: number }[];
 }

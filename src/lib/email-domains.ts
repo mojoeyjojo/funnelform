@@ -8,10 +8,20 @@ function key(): string {
   return k;
 }
 
+export interface ResendDomainRecord {
+  record: string;
+  name: string;
+  type: string;
+  value: string;
+  status: string;
+  ttl?: string;
+  priority?: number;
+}
+
 export interface ResendDomain {
   id: string;
   status: string;
-  records: { record: string; name: string; type: string; value: string; status: string }[];
+  records: ResendDomainRecord[];
 }
 
 async function call(path: string, init?: RequestInit): Promise<Response> {
@@ -39,10 +49,13 @@ export async function verifyResendDomain(id: string): Promise<void> {
   if (!res.ok) throw new Error(`Resend verify ${res.status}`);
 }
 
-export async function getResendDomain(id: string): Promise<{ status: string }> {
+// Returns the full domain so callers can refresh both the overall status and
+// the per-record DNS statuses (records default to [] for a minimal response).
+export async function getResendDomain(id: string): Promise<ResendDomain> {
   const res = await call(`/domains/${id}`);
   if (!res.ok) throw new Error(`Resend get domain ${res.status}`);
-  return (await res.json()) as { status: string };
+  const json = (await res.json()) as Partial<ResendDomain>;
+  return { id: json.id ?? id, status: json.status ?? "pending", records: json.records ?? [] };
 }
 
 // Collapse Resend's domain status vocabulary onto the three states our
