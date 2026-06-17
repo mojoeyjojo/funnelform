@@ -1,6 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("server-only", () => ({}));
-import { createResendDomain, verifyResendDomain, getResendDomain, mapDomainStatus } from "./email-domains";
+import {
+  createResendDomain,
+  verifyResendDomain,
+  getResendDomain,
+  mapDomainStatus,
+  ensureResendDomain,
+  deleteResendDomain,
+} from "./email-domains";
 
 function mockFetch(handler: (url: string, init: RequestInit) => Response) {
   vi.stubGlobal("fetch", vi.fn((url: string, init: RequestInit) => Promise.resolve(handler(url, init))));
@@ -42,6 +49,56 @@ describe("resend domains client", () => {
   it("throws on a non-ok create", async () => {
     mockFetch(() => new Response("{}", { status: 401 }));
     await expect(createResendDomain("x.com")).rejects.toThrow();
+  });
+});
+
+describe("ensureResendDomain", () => {
+  it("returns the created domain when POST succeeds", async () => {
+    mockFetch((u, init) => {
+      if (u.endsWith("/domains") && init.method === "POST")
+        return new Response(JSON.stringify({ id: "new1", status: "not_started", records: [] }), { status: 201 });
+      return new Response("{}", { status: 200 });
+    });
+    const d = await ensureResendDomain("mail.example.com");
+    expect(d.id).toBe("new1");
+  });
+
+  it("reuses an existing domain when POST fails but the domain is already registered", async () => {
+    mockFetch((u, init) => {
+      if (u.endsWith("/domains") && init.method === "POST")
+        return new Response(JSON.stringify({ statusCode: 403, message: "The mail.example.com domain has been registered already." }), { status: 403 });
+      if (u.endsWith("/domains") && (init.method ?? "GET") === "GET")
+        return new Response(JSON.stringify({ data: [{ id: "existing9", name: "mail.example.com" }] }), { status: 200 });
+      if (u.endsWith("/domains/existing9"))
+        return new Response(JSON.stringify({ id: "existing9", status: "verified", records: [] }), { status: 200 });
+      return new Response("{}", { status: 200 });
+    });
+    const d = await ensureResendDomain("mail.example.com");
+    expect(d.id).toBe("existing9");
+    expect(d.status).toBe("verified");
+  });
+
+  it("throws Resend's message when the domain genuinely cannot be created", async () => {
+    mockFetch((u, init) => {
+      if (u.endsWith("/domains") && init.method === "POST")
+        return new Response(JSON.stringify({ statusCode: 403, message: "Your plan includes 1 domain. Upgrade to add more." }), { status: 403 });
+      if (u.endsWith("/domains") && (init.method ?? "GET") === "GET")
+        return new Response(JSON.stringify({ data: [] }), { status: 200 });
+      return new Response("{}", { status: 200 });
+    });
+    await expect(ensureResendDomain("mail.example.com")).rejects.toThrow(/plan includes 1 domain/i);
+  });
+});
+
+describe("deleteResendDomain", () => {
+  it("treats a 404 as a successful delete (idempotent)", async () => {
+    mockFetch(() => new Response("{}", { status: 404 }));
+    await expect(deleteResendDomain("gone")).resolves.toBeUndefined();
+  });
+
+  it("throws on a non-404 failure", async () => {
+    mockFetch(() => new Response("{}", { status: 500 }));
+    await expect(deleteResendDomain("d1")).rejects.toThrow();
   });
 });
 

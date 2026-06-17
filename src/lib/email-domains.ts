@@ -44,6 +44,45 @@ export async function createResendDomain(name: string): Promise<ResendDomain> {
   return (await res.json()) as ResendDomain;
 }
 
+// Find an already-registered domain by exact name (the list response omits the
+// per-record details, so fetch the full record for a match).
+export async function findResendDomainByName(name: string): Promise<ResendDomain | null> {
+  const res = await call("/domains");
+  if (!res.ok) return null;
+  const data = (await res.json()) as { data?: { id: string; name: string }[] };
+  const match = (data.data ?? []).find((d) => d.name === name);
+  return match ? getResendDomain(match.id) : null;
+}
+
+// Register the domain, or reuse it if Resend already has it. A prior Remove
+// deletes our row but the domain can linger in Resend (or a delete can fail),
+// so re-adding must recover gracefully instead of 502-ing. On ANY create
+// failure we look the domain up by name: if it already exists we reuse it
+// (covers "already registered" and a domain that is present but tripped the
+// account's domain-count limit). Only a genuinely-absent domain throws, and the
+// thrown message carries Resend's own text so the caller can react (e.g. to the
+// plan limit).
+export async function ensureResendDomain(name: string): Promise<ResendDomain> {
+  const res = await call("/domains", { method: "POST", body: JSON.stringify({ name }) });
+  if (res.ok) return (await res.json()) as ResendDomain;
+  const body = await res.text().catch(() => "");
+  const existing = await findResendDomainByName(name);
+  if (existing) return existing;
+  let detail = "";
+  try {
+    detail = (JSON.parse(body) as { message?: string }).message ?? "";
+  } catch {
+    // non-JSON body; fall through to the status code
+  }
+  throw new Error(detail || `Resend create domain ${res.status}`);
+}
+
+export async function deleteResendDomain(id: string): Promise<void> {
+  const res = await call(`/domains/${id}`, { method: "DELETE" });
+  // 404 = already gone; treat as success so teardown is idempotent.
+  if (!res.ok && res.status !== 404) throw new Error(`Resend delete domain ${res.status}`);
+}
+
 export async function verifyResendDomain(id: string): Promise<void> {
   const res = await call(`/domains/${id}/verify`, { method: "POST" });
   if (!res.ok) throw new Error(`Resend verify ${res.status}`);
