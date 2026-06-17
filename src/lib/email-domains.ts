@@ -99,11 +99,13 @@ export async function getResendDomain(id: string): Promise<ResendDomain> {
 
 // Collapse Resend's domain status vocabulary onto the three states our
 // sending_domains row + UI understand. Resend reports not_started / pending /
-// verifying / verified / failed / temporary_failure; we surface a hard failure
-// so the owner sees the "Failed" badge and re-checks DNS instead of waiting on
-// a "Pending" that will never clear.
+// verifying / verified / failed / temporary_failure, plus partially_verified /
+// partially_failed on the webhook. We surface a hard failure (incl. partial
+// failure) so the owner sees the "Failed" badge and re-checks DNS instead of
+// waiting on a "Pending" that will never clear.
 export function mapDomainStatus(resendStatus: string): "verified" | "failed" | "pending" {
   if (resendStatus === "verified") return "verified";
-  if (resendStatus === "failed" || resendStatus === "temporary_failure") return "failed";
+  if (resendStatus === "failed" || resendStatus === "temporary_failure" || resendStatus === "partially_failed")
+    return "failed";
   return "pending";
 }

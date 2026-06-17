@@ -659,7 +659,8 @@ function SendingDomainCard() {
     );
   }
 
-  // Read-only check (GET): syncs status + per-record DNS state, no re-trigger.
+  // Read-only Resend reconciliation (GET): syncs status + per-record DNS state,
+  // no re-trigger. Used once on load as a missed-webhook safety net.
   async function checkStatusOnce(): Promise<string | null> {
     try {
       const res = await fetch("/api/sending-domain/verify");
@@ -667,6 +668,20 @@ function SendingDomainCard() {
       const data = (await res.json()) as { status?: string; dnsRecords?: SendingDomain["dns_records"] };
       if (data.status) applyStatus(data.status, data.dnsRecords);
       return data.status ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  // Read our OWN DB row (kept fresh by the Resend webhook). This is what the
+  // verify loop polls, so polling never touches Resend and scales per-user.
+  async function pollDbStatus(): Promise<string | null> {
+    try {
+      const res = await fetch("/api/sending-domain");
+      if (!res.ok) return null;
+      const data = (await res.json()) as { sendingDomain: SendingDomain | null };
+      if (data.sendingDomain) applyStatus(data.sendingDomain.status, data.sendingDomain.dns_records);
+      return data.sendingDomain?.status ?? null;
     } catch {
       return null;
     }
@@ -764,11 +779,12 @@ function SendingDomainCard() {
       return;
     }
 
-    // 2. Poll read-only until resolved or the window elapses.
+    // 2. Poll OUR DB (the webhook keeps it fresh) until resolved or the window
+    // elapses. No Resend calls in the loop, so it scales with concurrent users.
     const deadline = Date.now() + POLL_WINDOW_MS;
     const tick = async () => {
       if (pollCancelled.current) return;
-      const s = await checkStatusOnce();
+      const s = await pollDbStatus();
       if (pollCancelled.current) return;
       if (s === "verified") {
         setVerifyPhase("idle");
