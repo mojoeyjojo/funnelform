@@ -582,6 +582,39 @@ function IntegrationsCard({
   );
 }
 
+// Small clipboard button for a DNS record cell. Shows a brief check on success.
+function CopyButton({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      aria-label={`Copy ${label}`}
+      title="Copy"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(value);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        } catch {
+          // clipboard unavailable; no-op
+        }
+      }}
+      className="mt-px shrink-0 text-[var(--muted)] transition-colors hover:text-[var(--signal)]"
+    >
+      {copied ? (
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-600">
+          <polyline points="20 6 9 17 4 12" />
+        </svg>
+      ) : (
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="9" y="9" width="13" height="13" rx="2" />
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+        </svg>
+      )}
+    </button>
+  );
+}
+
 // Inline domain manager used inside the follow-up card when custom_domain mode is
 // selected and the owner has Pro. Fetches account-level sending domain state on
 // mount, lets the owner add / verify / remove the domain.
@@ -827,6 +860,22 @@ function SendingDomainCard() {
 
   // Domain exists: show status, DNS records table, and actions.
   const rec = domain!;
+
+  // Per-record status, kept in lockstep with the domain-level label:
+  // - while checking, reflect Resend's live per-record state;
+  // - once the whole domain is verified, every record is OK;
+  // - otherwise (before a check, or after a timed-out / failed attempt) show
+  //   "Not verified" rather than leaving stale per-record states behind.
+  function renderRecordStatus(recordStatus: string) {
+    if (verifyPhase === "checking") {
+      if (recordStatus === "verified") return <span className="text-emerald-600">OK</span>;
+      if (recordStatus === "failed") return <span className="text-rose-600">Failed</span>;
+      return <span className="text-amber-600">Checking...</span>;
+    }
+    if (rec.status === "verified") return <span className="text-emerald-600">OK</span>;
+    return <span className="text-amber-600">Not verified</span>;
+  }
+
   return (
     <div className="space-y-3">
       {/* Domain header row */}
@@ -915,20 +964,27 @@ function SendingDomainCard() {
                     className="border-b border-[var(--hairline)] last:border-0"
                   >
                     <td className="px-3 py-2 font-mono text-[var(--foreground)]">{r.type}</td>
-                    <td className="px-3 py-2 font-mono text-[var(--foreground)] break-all">{r.name}</td>
-                    <td className="px-3 py-2 font-mono text-[var(--foreground)] break-all">{r.value}</td>
-                    <td className="px-3 py-2 font-mono text-[var(--foreground)]">
-                      {r.priority ?? ""}
+                    <td className="px-3 py-2">
+                      <div className="flex items-start justify-between gap-1.5">
+                        <span className="font-mono text-[var(--foreground)] break-all">{r.name}</span>
+                        <CopyButton value={r.name} label="name" />
+                      </div>
                     </td>
                     <td className="px-3 py-2">
-                      {r.status === "verified" ? (
-                        <span className="text-emerald-600">OK</span>
-                      ) : r.status === "failed" ? (
-                        <span className="text-rose-600">Failed</span>
-                      ) : (
-                        <span className="text-amber-600">Pending</span>
-                      )}
+                      <div className="flex items-start justify-between gap-1.5">
+                        <span className="font-mono text-[var(--foreground)] break-all">{r.value}</span>
+                        <CopyButton value={r.value} label="value" />
+                      </div>
                     </td>
+                    <td className="px-3 py-2">
+                      {r.priority != null ? (
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono text-[var(--foreground)]">{r.priority}</span>
+                          <CopyButton value={String(r.priority)} label="priority" />
+                        </div>
+                      ) : null}
+                    </td>
+                    <td className="px-3 py-2">{renderRecordStatus(r.status)}</td>
                   </tr>
                 ))}
               </tbody>
