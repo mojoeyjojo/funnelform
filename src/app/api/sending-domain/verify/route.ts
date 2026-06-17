@@ -4,8 +4,14 @@ import { verifyResendDomain, getResendDomain, mapDomainStatus } from "@/lib/emai
 
 export const runtime = "nodejs";
 
-// POST /api/sending-domain/verify: ask Resend to re-check DNS, then mirror the
+// POST /api/sending-domain/verify: re-check DNS with Resend, then mirror the
 // resulting status onto the owner's sending_domains row.
+//
+// Order matters: Resend's POST /domains/{id}/verify RESETS the domain to
+// "pending" while it re-runs DNS checks asynchronously. Reading right after a
+// verify therefore catches that transient "pending" and would clobber an
+// already-verified row. So read the current status FIRST and only trigger a
+// re-verify when it isn't verified yet.
 export async function POST() {
   const supabase = await createSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -17,8 +23,11 @@ export async function POST() {
     .maybeSingle();
   if (!row) return NextResponse.json({ error: "No domain to verify." }, { status: 404 });
   try {
-    await verifyResendDomain(row.resend_domain_id as string);
-    const d = await getResendDomain(row.resend_domain_id as string);
+    let d = await getResendDomain(row.resend_domain_id as string);
+    if (d.status !== "verified") {
+      await verifyResendDomain(row.resend_domain_id as string);
+      d = await getResendDomain(row.resend_domain_id as string);
+    }
     const status = mapDomainStatus(d.status);
     await supabase
       .from("sending_domains")
