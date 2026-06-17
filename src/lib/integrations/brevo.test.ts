@@ -20,6 +20,25 @@ describe("brevo adapter", () => {
     expect(key).toBe("xkeysib-abc");
   });
 
+  it("surfaces Brevo's own message on a failed validation", async () => {
+    mockFetch(() =>
+      new Response(
+        JSON.stringify({ message: "We have detected you are using an unrecognised IP address", code: "unauthorized" }),
+        { status: 401 },
+      ),
+    );
+    const res = await brevo.validateCredentials({ apiKey: "xkeysib-abc" });
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain("unrecognised IP address");
+  });
+
+  it("falls back to the status code when the error body is not JSON", async () => {
+    mockFetch(() => new Response("gateway error", { status: 502 }));
+    const res = await brevo.validateCredentials({ apiKey: "xkeysib-abc" });
+    expect(res.ok).toBe(false);
+    expect(res.error).toBe("Brevo returned 502");
+  });
+
   it("lists contact lists as targets", async () => {
     mockFetch(() => new Response(JSON.stringify({ lists: [{ id: 5, name: "Newsletter" }] }), { status: 200 }));
     const targets = await brevo.listTargets({ apiKey: "k" });

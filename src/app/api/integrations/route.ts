@@ -23,7 +23,9 @@ export async function GET() {
 
 const ConnectSchema = z.object({
   provider: z.enum(["kit", "mailchimp", "mailerlite", "brevo"]),
-  apiKey: z.string().min(8).max(500),
+  // MailerLite issues long RS256 JWT tokens (~1000 chars), so the ceiling has to
+  // be generous; encrypted_credentials is a text column with no length concern.
+  apiKey: z.string().min(8).max(4096),
 });
 
 // POST /api/integrations: validate a pasted API key, store it encrypted, and

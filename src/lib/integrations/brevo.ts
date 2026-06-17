@@ -24,7 +24,18 @@ export const brevo: EmailDestination = {
   async validateCredentials(creds: EspCredentials) {
     try {
       const res = await call(creds.apiKey, "/account");
-      return res.ok ? { ok: true } : { ok: false, error: `Brevo returned ${res.status}` };
+      if (res.ok) return { ok: true };
+      // Surface Brevo's own message (e.g. the actionable "unrecognised IP
+      // address" notice from its Authorised IPs restriction) instead of a bare
+      // status code, so the owner knows what to change.
+      const body = await res.text().catch(() => "");
+      let detail = "";
+      try {
+        detail = (JSON.parse(body) as { message?: string }).message ?? "";
+      } catch {
+        // non-JSON body; fall back to the status code below
+      }
+      return { ok: false, error: detail || `Brevo returned ${res.status}` };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : "request failed" };
     }
