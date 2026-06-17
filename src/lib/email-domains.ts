@@ -44,3 +44,14 @@ export async function getResendDomain(id: string): Promise<{ status: string }> {
   if (!res.ok) throw new Error(`Resend get domain ${res.status}`);
   return (await res.json()) as { status: string };
 }
+
+// Collapse Resend's domain status vocabulary onto the three states our
+// sending_domains row + UI understand. Resend reports not_started / pending /
+// verifying / verified / failed / temporary_failure; we surface a hard failure
+// so the owner sees the "Failed" badge and re-checks DNS instead of waiting on
+// a "Pending" that will never clear.
+export function mapDomainStatus(resendStatus: string): "verified" | "failed" | "pending" {
+  if (resendStatus === "verified") return "verified";
+  if (resendStatus === "failed" || resendStatus === "temporary_failure") return "failed";
+  return "pending";
+}

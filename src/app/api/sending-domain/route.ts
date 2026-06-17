@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { effectivePlan, fetchPlanProfile, hasProFeatures } from "@/lib/plan";
-import { createResendDomain } from "@/lib/email-domains";
+import { createResendDomain, mapDomainStatus } from "@/lib/email-domains";
 
 export const runtime = "nodejs";
 
@@ -48,7 +48,7 @@ export async function POST(request: Request) {
 
   try {
     const domain = await createResendDomain(parsed.data.domain);
-    const status = domain.status === "verified" ? "verified" : "pending";
+    const status = mapDomainStatus(domain.status);
     const { data, error } = await supabase
       .from("sending_domains")
       .upsert(

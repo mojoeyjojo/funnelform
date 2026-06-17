@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("server-only", () => ({}));
-import { createResendDomain, verifyResendDomain, getResendDomain } from "./email-domains";
+import { createResendDomain, verifyResendDomain, getResendDomain, mapDomainStatus } from "./email-domains";
 
 function mockFetch(handler: (url: string, init: RequestInit) => Response) {
   vi.stubGlobal("fetch", vi.fn((url: string, init: RequestInit) => Promise.resolve(handler(url, init))));
@@ -42,5 +42,20 @@ describe("resend domains client", () => {
   it("throws on a non-ok create", async () => {
     mockFetch(() => new Response("{}", { status: 401 }));
     await expect(createResendDomain("x.com")).rejects.toThrow();
+  });
+});
+
+describe("mapDomainStatus", () => {
+  it("maps verified through", () => {
+    expect(mapDomainStatus("verified")).toBe("verified");
+  });
+  it("maps failed and temporary_failure to failed", () => {
+    expect(mapDomainStatus("failed")).toBe("failed");
+    expect(mapDomainStatus("temporary_failure")).toBe("failed");
+  });
+  it("maps every other Resend state to pending", () => {
+    expect(mapDomainStatus("not_started")).toBe("pending");
+    expect(mapDomainStatus("pending")).toBe("pending");
+    expect(mapDomainStatus("verifying")).toBe("pending");
   });
 });

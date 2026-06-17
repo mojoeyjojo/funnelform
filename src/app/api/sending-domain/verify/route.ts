@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { verifyResendDomain, getResendDomain } from "@/lib/email-domains";
+import { verifyResendDomain, getResendDomain, mapDomainStatus } from "@/lib/email-domains";
 
 export const runtime = "nodejs";
 
@@ -19,7 +19,7 @@ export async function POST() {
   try {
     await verifyResendDomain(row.resend_domain_id as string);
     const d = await getResendDomain(row.resend_domain_id as string);
-    const status = d.status === "verified" ? "verified" : "pending";
+    const status = mapDomainStatus(d.status);
     await supabase
       .from("sending_domains")
       .update({ status, updated_at: new Date().toISOString() })

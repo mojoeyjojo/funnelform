@@ -33,6 +33,26 @@ describe("kit adapter", () => {
     expect(calls.some((c) => c.url.endsWith("/v4/tags/9/subscribers"))).toBe(true);
   });
 
+  it("sends the custom fields dict in the /subscribers POST body", async () => {
+    let subscriberBody: Record<string, unknown> | null = null;
+    mockFetch((url, init) => {
+      if (url.endsWith("/v4/subscribers") && init.method === "POST")
+        subscriberBody = JSON.parse(init.body as string) as Record<string, unknown>;
+      if (url.endsWith("/tags")) return new Response(JSON.stringify({ tags: [] }), { status: 200 });
+      return new Response("{}", { status: 200 });
+    });
+    await kit.upsertSubscriber(
+      { apiKey: "k" },
+      "form55",
+      { email: "a@b.com", name: "A", tags: [], fields: { outcome: "The Strategist", quiz: "Find Your Type" } },
+    );
+    expect(subscriberBody).not.toBeNull();
+    expect((subscriberBody as { fields?: Record<string, string> } | null)?.fields).toEqual({
+      outcome: "The Strategist",
+      quiz: "Find Your Type",
+    });
+  });
+
   it("throws when the subscriber upsert fails", async () => {
     mockFetch(() => new Response("{}", { status: 500 }));
     await expect(
